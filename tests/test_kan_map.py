@@ -3,7 +3,12 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from models.kan_transport import MonotonicKANMap, ScaleModulatedKANMap, BSplineBasis
+from models.kan_transport import (
+    MonotonicKANMap,
+    ScaleModulatedKANMap,
+    BSplineBasis,
+    CubicHermiteBasis,
+)
 
 
 @pytest.fixture
@@ -50,6 +55,16 @@ def test_spline_basis_derivatives_vs_autograd():
     g3 = torch.autograd.grad(g2.sum(), x)[0]
     g3_analytic = (b_d3 * coeffs).sum(dim=-1)
     assert torch.allclose(g3, g3_analytic, atol=1e-12), "3rd derivative mismatch"
+
+
+def test_cubic_hermite_basis():
+    """Verify CubicHermiteBasis evaluation and derivative correctness."""
+    grid = torch.linspace(-4.0, 4.0, 9, dtype=torch.float64)
+    x = torch.tensor([-2.5, 0.0, 2.5], dtype=torch.float64)
+    vals, d1_vals, k = CubicHermiteBasis.eval_hermite(x, grid)
+    h00, h10, h01, h11 = vals
+    assert torch.all(h00 + h01 <= 1.0 + 1e-6), "Partition bounds hold for Hermite interpolation"
+    assert len(k) == 3, "Interval count matches input"
 
 
 def test_spline_linear_extrapolation():
@@ -246,7 +261,6 @@ def test_scale_modulated_monotonicity_and_derivatives():
     target_k = 2
     model = ScaleModulatedKANMap(d, target_index=target_k, hidden_dim=3, grid_size=6).to(torch.float64)
 
-    # Randomize scale and offset weights
     with torch.no_grad():
         model.inner_cond_weights.normal_(0, 0.4)
         model.inner_target_delta.normal_(0, 0.8)
@@ -258,23 +272,19 @@ def test_scale_modulated_monotonicity_and_derivatives():
 
     x = torch.randn(15, d, dtype=torch.float64, requires_grad=True)
 
-    # 1. Monotonicity check
     derivs = model.compute_derivatives(x)
     S_k = derivs["S_k"].squeeze()
     assert torch.all(S_k > 0), "Scale-modulated target derivative must be strictly positive"
 
-    # 2. First derivatives vs autograd
     out = model(x)
     g1 = torch.autograd.grad(out.sum(), x, create_graph=True)[0]
     assert torch.allclose(derivs["S_all"], g1, atol=1e-12), "Scale-modulated 1st derivatives mismatch"
 
-    # 3. Second derivatives vs autograd
     g2 = torch.autograd.grad(g1[:, target_k].sum(), x, create_graph=True)[0]
     assert torch.allclose(derivs["S_kk"].squeeze(), g2[:, target_k], atol=1e-12), "Scale-modulated S_kk mismatch"
     for j in model.other_indices:
         assert torch.allclose(derivs["S_jk"][:, j], g2[:, j], atol=1e-12), f"Scale-modulated S_{j}k mismatch"
 
-    # 4. Precision integrand vs autograd
     g_loss = -0.5 * (out**2) + torch.log(derivs["S_k"])
     dg_dxk = torch.autograd.grad(g_loss.sum(), x, create_graph=True)[0][:, target_k]
     d2g = torch.autograd.grad(dg_dxk.sum(), x)[0]

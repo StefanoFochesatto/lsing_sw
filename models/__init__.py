@@ -1,5 +1,10 @@
 from models.UMNN import UMNNMAFFlow, MADE, ParallelNeuralIntegral, NeuralIntegral
-from models.kan_transport import MonotonicKANMap, ScaleModulatedKANMap, BSplineBasis
+from models.kan_transport import (
+    MonotonicKANMap,
+    ScaleModulatedKANMap,
+    BSplineBasis,
+    CubicHermiteBasis,
+)
 
 __all__ = [
     "UMNNMAFFlow",
@@ -9,4 +14,5 @@ __all__ = [
     "MonotonicKANMap",
     "ScaleModulatedKANMap",
     "BSplineBasis",
+    "CubicHermiteBasis",
 ]

@@ -8,6 +8,7 @@ class BSplineBasis:
     """
     Evaluates uniform B-spline basis functions and their analytic derivatives
     up to degree 3, with continuous linear tail extrapolation beyond [grid_min, grid_max].
+    Provides C^2 continuity across knots, ideal for 3rd-order mixed derivatives.
     """
 
     @staticmethod
@@ -78,7 +79,6 @@ class BSplineBasis:
             b_curr = bases[3]
 
             # 1st derivative of cubic spline (degree 3)
-            # b3' = 3 * ( b2 / (t_{i+3} - t_i) - b2_{i+1} / (t_{i+4} - t_{i+1}) )
             d1_term = bases[2] / (grid[3:] - grid[:-3])
             b_d1 = 3.0 * (d1_term[..., :-1] - d1_term[..., 1:])
 
@@ -121,6 +121,56 @@ class BSplineBasis:
         b_d3 = torch.where(is_left | is_right, torch.zeros_like(b_d3), b_d3)
 
         return b_val, b_d1, b_d2, b_d3
+
+
+class CubicHermiteBasis:
+    """
+    Alternative spline engine using Cubic Hermite Splines (PCHIP), inspired by MonoKAN (Polo-Molina et al., 2025).
+    Evaluates explicit algebraic degree-3 Hermite polynomials:
+        h00(t) = 2t^3 - 3t^2 + 1,  h10(t) = t^3 - 2t^2 + t
+        h01(t) = -2t^3 + 3t^2,     h11(t) = t^3 - t^2
+    with linear tail extrapolation using endpoint slopes. Provides C^1 continuity.
+    """
+
+    @staticmethod
+    def eval_hermite(x, grid):
+        """
+        Evaluates Cubic Hermite basis functions and 1st derivatives.
+
+        Args:
+            x: Input tensor of shape (...,)
+            grid: Uniform knot grid of shape (num_knots,)
+
+        Returns:
+            basis_vals: Tuple (h00, h10, h01, h11)
+            basis_d1: Tuple (dh00, dh10, dh01, dh11) wrt x
+            interval_idx: Tensor of interval indices k
+        """
+        num_intervals = len(grid) - 1
+        t_min = grid[0]
+        t_max = grid[-1]
+        h = (t_max - t_min) / float(num_intervals)
+        inv_h = 1.0 / h
+
+        x_clamped = torch.clamp(x, t_min, t_max - 1e-6)
+        k = torch.clamp(((x_clamped - t_min) / h).long(), 0, num_intervals - 1)
+        xk = grid[k]
+        t = (x_clamped - xk) / h
+
+        t2 = t * t
+        t3 = t2 * t
+
+        h00 = 2.0 * t3 - 3.0 * t2 + 1.0
+        h10 = t3 - 2.0 * t2 + t
+        h01 = -2.0 * t3 + 3.0 * t2
+        h11 = t3 - t2
+
+        dh00 = (6.0 * t2 - 6.0 * t) * inv_h
+        dh10 = (3.0 * t2 - 4.0 * t + 1.0)
+        dh01 = (-6.0 * t2 + 6.0 * t) * inv_h
+        dh11 = (3.0 * t2 - 2.0 * t)
+
+        return (h00, h10, h01, h11), (dh00, dh10, dh01, dh11), k
 
 
 class MonotonicKANMap(nn.Module):
