@@ -1,0 +1,244 @@
+{
+  "dataset": "TCGA curatedOvarianData",
+  "num_genes": 156,
+  "sample_counts": {
+    "train": 346,
+    "val": 115,
+    "test": 117
+  },
+  "training_time_sec": 254.8791570339963,
+  "eval_time_sec": 1.9939550189956208,
+  "peak_mem_mb": 75.41326141357422,
+  "sparsity_across_tau": {
+    "0.05": {
+      "edges_count": 1408,
+      "density_pct": 11.645988420181968,
+      "entries_below_pct": 88.35401157981802
+    },
+    "0.1": {
+      "edges_count": 98,
+      "density_pct": 0.8105872622001655,
+      "entries_below_pct": 99.18941273779983
+    },
+    "0.15": {
+      "edges_count": 3,
+      "density_pct": 0.024813895781637715,
+      "entries_below_pct": 99.97518610421837
+    },
+    "0.2": {
+      "edges_count": 0,
+      "density_pct": 0.0,
+      "entries_below_pct": 100.0
+    },
+    "0.25": {
+      "edges_count": 0,
+      "density_pct": 0.0,
+      "entries_below_pct": 100.0
+    },
+    "0.3": {
+      "edges_count": 0,
+      "density_pct": 0.0,
+      "entries_below_pct": 100.0
+    },
+    "0.35": {
+      "edges_count": 0,
+      "density_pct": 0.0,
+      "entries_below_pct": 100.0
+    },
+    "0.4": {
+      "edges_count": 0,
+      "density_pct": 0.0,
+      "entries_below_pct": 100.0
+    }
+  },
+  "tau_chosen": 0.2,
+  "ctse_ranking": {
+    "gene": "CTSE",
+    "index": 33,
+    "overall_rank": 34,
+    "mean_centrality_rank": 34.0,
+    "deg_rank": 34.0,
+    "close_rank": 34.0,
+    "bet_rank": 34.0,
+    "eig_rank": 34.0,
+    "degree": 0
+  },
+  "epcam_ranking": {
+    "gene": "EPCAM",
+    "index": 46,
+    "overall_rank": 47,
+    "mean_centrality_rank": 47.0,
+    "deg_rank": 47.0,
+    "close_rank": 47.0,
+    "bet_rank": 47.0,
+    "eig_rank": 47.0,
+    "degree": 0
+  },
+  "top_15_hub_genes": [
+    {
+      "gene": "ABCC3",
+      "index": 0,
+      "overall_rank": 1,
+      "mean_centrality_rank": 1.0,
+      "deg_rank": 1.0,
+      "close_rank": 1.0,
+      "bet_rank": 1.0,
+      "eig_rank": 1.0,
+      "degree": 0
+    },
+    {
+      "gene": "ABCD3",
+      "index": 1,
+      "overall_rank": 2,
+      "mean_centrality_rank": 2.0,
+      "deg_rank": 2.0,
+      "close_rank": 2.0,
+      "bet_rank": 2.0,
+      "eig_rank": 2.0,
+      "degree": 0
+    },
+    {
+      "gene": "ABHD2",
+      "index": 2,
+      "overall_rank": 3,
+      "mean_centrality_rank": 3.0,
+      "deg_rank": 3.0,
+      "close_rank": 3.0,
+      "bet_rank": 3.0,
+      "eig_rank": 3.0,
+      "degree": 0
+    },
+    {
+      "gene": "ARHGAP12",
+      "index": 3,
+      "overall_rank": 4,
+      "mean_centrality_rank": 4.0,
+      "deg_rank": 4.0,
+      "close_rank": 4.0,
+      "bet_rank": 4.0,
+      "eig_rank": 4.0,
+      "degree": 0
+    },
+    {
+      "gene": "ARMCX1",
+      "index": 4,
+      "overall_rank": 5,
+      "mean_centrality_rank": 5.0,
+      "deg_rank": 5.0,
+      "close_rank": 5.0,
+      "bet_rank": 5.0,
+      "eig_rank": 5.0,
+      "degree": 0
+    },
+    {
+      "gene": "ARPC5L",
+      "index": 5,
+      "overall_rank": 6,
+      "mean_centrality_rank": 6.0,
+      "deg_rank": 6.0,
+      "close_rank": 6.0,
+      "bet_rank": 6.0,
+      "eig_rank": 6.0,
+      "degree": 0
+    },
+    {
+      "gene": "ARSD",
+      "index": 6,
+      "overall_rank": 7,
+      "mean_centrality_rank": 7.0,
+      "deg_rank": 7.0,
+      "close_rank": 7.0,
+      "bet_rank": 7.0,
+      "eig_rank": 7.0,
+      "degree": 0
+    },
+    {
+      "gene": "ATP1B1",
+      "index": 7,
+      "overall_rank": 8,
+      "mean_centrality_rank": 8.0,
+      "deg_rank": 8.0,
+      "close_rank": 8.0,
+      "bet_rank": 8.0,
+      "eig_rank": 8.0,
+      "degree": 0
+    },
+    {
+      "gene": "ATP2B4",
+      "index": 8,
+      "overall_rank": 9,
+      "mean_centrality_rank": 9.0,
+      "deg_rank": 9.0,
+      "close_rank": 9.0,
+      "bet_rank": 9.0,
+      "eig_rank": 9.0,
+      "degree": 0
+    },
+    {
+      "gene": "ATP2C1",
+      "index": 9,
+      "overall_rank": 10,
+      "mean_centrality_rank": 10.0,
+      "deg_rank": 10.0,
+      "close_rank": 10.0,
+      "bet_rank": 10.0,
+      "eig_rank": 10.0,
+      "degree": 0
+    },
+    {
+      "gene": "ATP8B1",
+      "index": 10,
+      "overall_rank": 11,
+      "mean_centrality_rank": 11.0,
+      "deg_rank": 11.0,
+      "close_rank": 11.0,
+      "bet_rank": 11.0,
+      "eig_rank": 11.0,
+      "degree": 0
+    },
+    {
+      "gene": "BAG1",
+      "index": 11,
+      "overall_rank": 12,
+      "mean_centrality_rank": 12.0,
+      "deg_rank": 12.0,
+      "close_rank": 12.0,
+      "bet_rank": 12.0,
+      "eig_rank": 12.0,
+      "degree": 0
+    },
+    {
+      "gene": "BASP1",
+      "index": 12,
+      "overall_rank": 13,
+      "mean_centrality_rank": 13.0,
+      "deg_rank": 13.0,
+      "close_rank": 13.0,
+      "bet_rank": 13.0,
+      "eig_rank": 13.0,
+      "degree": 0
+    },
+    {
+      "gene": "BNIP3",
+      "index": 13,
+      "overall_rank": 14,
+      "mean_centrality_rank": 14.0,
+      "deg_rank": 14.0,
+      "close_rank": 14.0,
+      "bet_rank": 14.0,
+      "eig_rank": 14.0,
+      "degree": 0
+    },
+    {
+      "gene": "BZW2",
+      "index": 14,
+      "overall_rank": 15,
+      "mean_centrality_rank": 15.0,
+      "deg_rank": 15.0,
+      "close_rank": 15.0,
+      "bet_rank": 15.0,
+      "eig_rank": 15.0,
+      "degree": 0
+    }
+  ]
+}

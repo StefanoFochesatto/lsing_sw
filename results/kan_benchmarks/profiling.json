@@ -1,0 +1,24 @@
+{
+  "parameter_count": {
+    "umnn": 1523,
+    "monotonic_kan": 485,
+    "reduction_ratio": 3.14
+  },
+  "training_throughput": {
+    "batch_size": 1000,
+    "umnn_samples_per_sec": 33010.6,
+    "umnn_ms_per_epoch": 30.29,
+    "kan_samples_per_sec": 104591.0,
+    "kan_ms_per_epoch": 9.56,
+    "speedup_factor": 3.17
+  },
+  "precision_matrix_extraction": {
+    "samples_N": 1000,
+    "dim_d": 10,
+    "umnn_quadrature_seconds": 5.898,
+    "kan_torch_func_seconds": 6.504,
+    "kan_analytic_chain_seconds": 0.059,
+    "analytic_vs_umnn_speedup": 100.5,
+    "analytic_vs_torch_func_speedup": 110.8
+  }
+}
