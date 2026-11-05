@@ -202,8 +202,16 @@ def main():
         umnn_eval_time = time.perf_counter() - t0
         np.savetxt(umnn_prec_path, umnn_sym, fmt="%.6f", delimiter=",")
     else:
-        print(f"\n[1/2] Loading precomputed UMNN precision matrix from {umnn_prec_path}...")
-        umnn_sym = np.loadtxt(umnn_prec_path, delimiter=",")
+        # A quick-run UMNN file (12x12) must never be compared to a full 156-gene KAN run.
+        umnn_sym = None
+        if umnn_prec_path.exists():
+            candidate = np.loadtxt(umnn_prec_path, delimiter=",")
+            if candidate.shape == (d, d):
+                umnn_sym = candidate
+        if umnn_sym is None:
+            print(f"\n[1/2] No {d}x{d} UMNN matrix available; skipping paired comparison.")
+        else:
+            print(f"\n[1/2] Loading matching UMNN matrix from {umnn_prec_path}...")
         umnn_train_time = None
         umnn_eval_time = None
         peak_u = 0
@@ -212,7 +220,7 @@ def main():
         "train_time_sec": umnn_train_time,
         "eval_time_sec": umnn_eval_time,
         "peak_mem_mb": peak_u / (1024 * 1024),
-        "precision_matrix_path": str(umnn_prec_path),
+        "precision_matrix_path": str(umnn_prec_path) if umnn_sym is not None else None,
     }
 
     # -------------------------------------------------------------------------
@@ -258,25 +266,23 @@ def main():
     # 3. Direct Statistical & Biological Comparison
     # -------------------------------------------------------------------------
     triu_idx = np.triu_indices(d, k=1)
-    umnn_offdiag = np.abs(umnn_sym[triu_idx])
     kan_offdiag = np.abs(kan_sym[triu_idx])
-
-    sp_corr, _ = spearmanr(umnn_offdiag, kan_offdiag)
-    pr_corr, _ = pearsonr(umnn_offdiag, kan_offdiag)
-
-    # Top-K edge discovery overlap (Jaccard similarity)
+    sp_corr = pr_corr = None
     top_k_overlap = {}
-    candidate_k = [k_val for k_val in [10, 25, 50, 100, 200] if k_val < len(umnn_offdiag)]
-    for K in candidate_k:
-        top_u = set(np.argsort(umnn_offdiag)[-K:])
-        top_k = set(np.argsort(kan_offdiag)[-K:])
-        intersection = len(top_u & top_k)
-        union = len(top_u | top_k)
-        jaccard = intersection / union if union > 0 else 0.0
-        top_k_overlap[str(K)] = {
-            "overlap_count": intersection,
-            "jaccard_similarity": float(jaccard),
-        }
+    if umnn_sym is not None:
+        umnn_offdiag = np.abs(umnn_sym[triu_idx])
+        sp_corr, _ = spearmanr(umnn_offdiag, kan_offdiag)
+        pr_corr, _ = pearsonr(umnn_offdiag, kan_offdiag)
+        candidate_k = [k_val for k_val in [10, 25, 50, 100, 200] if k_val < len(umnn_offdiag)]
+        for K in candidate_k:
+            top_u = set(np.argsort(umnn_offdiag)[-K:])
+            top_k = set(np.argsort(kan_offdiag)[-K:])
+            intersection = len(top_u & top_k)
+            union = len(top_u | top_k)
+            top_k_overlap[str(K)] = {
+                "overlap_count": intersection,
+                "jaccard_similarity": float(intersection / union) if union else 0.0,
+            }
 
     # Graph Sparsity vs Threshold for KAN
     total_pairs = len(kan_offdiag)
@@ -299,8 +305,8 @@ def main():
     comparison = {
         "train_speedup_ratio": (umnn_train_time / kan_train_time) if (umnn_train_time and kan_train_time) else None,
         "eval_speedup_ratio": (umnn_eval_time / kan_eval_time) if (umnn_eval_time and kan_eval_time) else None,
-        "spearman_correlation": float(sp_corr),
-        "pearson_correlation": float(pr_corr),
+        "spearman_correlation": float(sp_corr) if sp_corr is not None else None,
+        "pearson_correlation": float(pr_corr) if pr_corr is not None else None,
         "top_k_overlap": top_k_overlap,
         "kan_sparsity_across_tau": sparsity_report,
         "tau_chosen": tau_chosen,
@@ -318,11 +324,14 @@ def main():
     print("OVARIAN BENCHMARK SUMMARY (UMNN vs SM-KAN)")
     print("=" * 70)
     if umnn_train_time:
-        print(f"Training Time (156 Genes):   UMNN = {umnn_train_time:.1f}s | SM-KAN = {kan_train_time:.1f}s (Speedup: {umnn_train_time/kan_train_time:.2f}x)")
+        print(f"Training Time ({d} Genes): UMNN = {umnn_train_time:.1f}s | SM-KAN = {kan_train_time:.1f}s (Speedup: {umnn_train_time/kan_train_time:.2f}x)")
         print(f"Precision Matrix Extraction: UMNN = {umnn_eval_time:.2f}s | SM-KAN = {kan_eval_time:.3f}s (Speedup: {umnn_eval_time/kan_eval_time:.1f}x)")
-    print(f"Precision Entry Rank Correlation (Spearman rho): {sp_corr:.3f} (Pearson r = {pr_corr:.3f})")
-    for K, info in top_k_overlap.items():
-        print(f"  Top-{K:<3} Edge Discovery Overlap: {info['overlap_count']}/{K} shared edges (Jaccard = {info['jaccard_similarity']:.2f})")
+    if sp_corr is not None:
+        print(f"Precision Entry Rank Correlation (Spearman rho): {sp_corr:.3f} (Pearson r = {pr_corr:.3f})")
+        for K, info in top_k_overlap.items():
+            print(f"  Top-{K:<3} Edge Discovery Overlap: {info['overlap_count']}/{K} shared edges (Jaccard = {info['jaccard_similarity']:.2f})")
+    else:
+        print("No matched UMNN matrix: cross-method rank correlations and speedups omitted.")
     print(f"\nAll results saved to {out_json}")
 
 
