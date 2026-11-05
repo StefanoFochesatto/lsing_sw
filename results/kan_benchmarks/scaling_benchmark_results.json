@@ -1,0 +1,54 @@
+{
+  "moons": {
+    "SM-KAN (Compact, 1-step)": {
+      "params": 356,
+      "test_ll": -2.518826961517334,
+      "train_time_sec": 4.109816982992925,
+      "sample_time_1000": 0.11052722699241713
+    },
+    "SM-KAN (Matched to UMNN, 2-step)": {
+      "params": 6164,
+      "test_ll": -2.2977023124694824,
+      "train_time_sec": 12.921917672967538,
+      "sample_time_1000": 0.7471887749852613
+    },
+    "SM-KAN (Matched to RealNVP, 4-step)": {
+      "params": 24488,
+      "test_ll": -2.1651604175567627,
+      "train_time_sec": 41.60273438098375,
+      "sample_time_1000": 2.4652684190077707
+    },
+    "UMNN-MAF Baseline": {
+      "params": 5473,
+      "test_ll": -2.308748722076416,
+      "train_time_sec": 5.2980382710229605,
+      "sample_time_1000": 0.8594694880302995
+    },
+    "RealNVP Baseline (6-layer)": {
+      "params": 26508,
+      "test_ll": -2.1717684268951416,
+      "train_time_sec": 2.1954774720361456,
+      "sample_time_1000": 0.003054617962334305
+    }
+  },
+  "gas": {
+    "SM-KAN (Compact, Q=4, G=8)": {
+      "params": 2574,
+      "test_ll": -10.591352462768555,
+      "train_time_sec": 4.730246618040837,
+      "sample_time_1000": 0.3373685270198621
+    },
+    "SM-KAN (Matched to RealNVP, Q=32, G=16)": {
+      "params": 27838,
+      "test_ll": -8.535305976867676,
+      "train_time_sec": 10.396775347995572,
+      "sample_time_1000": 1.0628079309826717
+    },
+    "RealNVP Baseline (6-layer)": {
+      "params": 30000,
+      "test_ll": -158.09559631347656,
+      "train_time_sec": 0.5585368489846587,
+      "sample_time_1000": 0.003468369017355144
+    }
+  }
+}

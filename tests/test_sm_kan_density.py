@@ -118,3 +118,41 @@ def test_sm_kan_standardization():
 
     samples = model.sample(n_samples=10, tol=1e-5)
     assert samples.shape == (10, d)
+
+
+def test_multistep_sm_kan_flow():
+    torch.manual_seed(42)
+    d = 3
+    num_steps = 3
+    model = SMKANDensityEstimator(num_features=d, num_steps=num_steps, hidden_dim=6, grid_size=8)
+    
+    # Check parameter count scaling
+    single_model = SMKANDensityEstimator(num_features=d, num_steps=1, hidden_dim=6, grid_size=8)
+    assert model.count_parameters() == single_model.count_parameters() * num_steps
+
+    # Test forward and log_prob
+    x = torch.randn(25, d)
+    z, ldj = model.forward(x)
+    assert z.shape == (25, d)
+    assert ldj.shape == (25,)
+
+    lp = model.log_prob(x)
+    assert lp.shape == (25,)
+    assert not torch.isnan(lp).any()
+
+    # Test loss & gradient backprop
+    loss, _, _ = model.compute_loss(x)
+    loss.backward()
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            assert p.grad is not None
+
+    # Test roundtrip inversion across 3 stacked steps
+    x_rec, diags = model.invert(z, tol=1e-5)
+    assert len(diags) == d * num_steps
+    diff = (x - x_rec).abs().max().item()
+    assert diff < 5e-5, f"Multi-step roundtrip error too large: {diff}"
+
+    # Test sampling
+    samples = model.sample(15, tol=1e-5)
+    assert samples.shape == (15, d)
