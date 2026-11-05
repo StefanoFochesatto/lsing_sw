@@ -35,6 +35,13 @@ from trainers.map_trainer import MapTrainer
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from evaluators.precision_matrix_computer import PrecisionMatrixComputer
 from datasets.butterfly_generator import generate_butterfly
+import argparse
+from models.monotonic_kan import ScaleModulatedKANMap
+from datasets.mixed_coupling_generator import (
+    generate_mixed_coupling_dataset,
+    get_mixed_coupling_ground_truth,
+)
+from verify_kan_theory import run_all_theory_verifications
 
 
 def compute_graph_metrics(precision_matrix, true_adj, thresholds=(0.2, 0.1, 0.05)):
@@ -594,7 +601,102 @@ def run_profiling_and_quadrature_breakdown():
     return profiling_results
 
 
+
+
+def run_mixed_coupling_benchmark(output_dir):
+    """
+    Runs Experiment 5: 6-Dimensional Mixed Additive & Multiplicative Coupling Graph.
+    Demonstrates location-scale decoupling in ScaleModulatedKANMap vs Additive MonotonicKANMap.
+    """
+    print("\n" + "=" * 70)
+    print("EXPERIMENT 5: MIXED ADDITIVE & MULTIPLICATIVE COUPLING BENCHMARK (d=6)")
+    print("=" * 70)
+
+    n_trn, n_val, n_tst = 2000, 800, 1000
+    full_data = generate_mixed_coupling_dataset(n_trn + n_val + n_tst, standardize=True, seed=42)
+    trn_data = full_data[:n_trn]
+    val_data = full_data[n_trn : n_trn + n_val]
+    tst_data = full_data[n_trn + n_val :]
+
+    d = 6
+    true_adj = get_mixed_coupling_ground_truth()
+    regs = [0.01, 0.005]
+    max_epochs = 30
+
+    # 1. Additive KAN
+    print("Training Additive MonotonicKANMap...")
+    t0 = time.perf_counter()
+    base_add = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, conditioning_scale=False) for k in range(d)]
+    trainer_add = KANTrainer(base_add, d, hidden_dim=4, grid_size=8, max_epochs=max_epochs)
+    add_models = []
+    for k in range(d):
+        others = [j for j in range(d) if j != k]
+        best_m, _, _, _ = trainer_add.train_model(trn_data, k, others, regs, val_data)
+        add_models.append(best_m)
+    add_time = time.perf_counter() - t0
+
+    comp_add = KANPrecisionComputer(add_models, tst_data, d)
+    raw_add_asym = comp_add.compute()
+    raw_add = 0.5 * (raw_add_asym + raw_add_asym.T)
+    np.fill_diagonal(raw_add, 1.0)
+    norm_add = comp_add.make_symmetric(raw_add_asym)
+
+    # 2. Scale-Modulated KAN
+    print("Training ScaleModulatedKANMap...")
+    t0 = time.perf_counter()
+    base_sm = [ScaleModulatedKANMap(d, target_index=k, hidden_dim=4, grid_size=8) for k in range(d)]
+    trainer_sm = KANTrainer(base_sm, d, hidden_dim=4, grid_size=8, max_epochs=max_epochs)
+    sm_models = []
+    for k in range(d):
+        others = [j for j in range(d) if j != k]
+        best_m, _, _, _ = trainer_sm.train_model(trn_data, k, others, regs, val_data)
+        sm_models.append(best_m)
+    sm_time = time.perf_counter() - t0
+
+    comp_sm = KANPrecisionComputer(sm_models, tst_data, d)
+    raw_sm_asym = comp_sm.compute()
+    raw_sm = 0.5 * (raw_sm_asym + raw_sm_asym.T)
+    np.fill_diagonal(raw_sm, 1.0)
+    norm_sm = comp_sm.make_symmetric(raw_sm_asym)
+
+    results = {
+        "ground_truth_adj": true_adj.tolist(),
+        "AdditiveMonotonicKAN": {
+            "train_time_sec": add_time,
+            "raw_precision_matrix": raw_add.tolist(),
+            "normalized_precision_matrix": norm_add.tolist(),
+        },
+        "ScaleModulatedKAN": {
+            "train_time_sec": sm_time,
+            "raw_precision_matrix": raw_sm.tolist(),
+            "normalized_precision_matrix": norm_sm.tolist(),
+        },
+    }
+
+    out_json = output_dir / "mixed_coupling_results.json"
+    with open(out_json, "w") as f:
+        json.dump(results, f, indent=2)
+
+    print("\n--- Mixed Coupling Symmetrized Precision Entries ---")
+    print(f"  Purely Additive Edge (0, 1):       Additive KAN = {raw_add[0, 1]:.3f} | SM-KAN = {raw_sm[0, 1]:.3f}")
+    print(f"  Purely Multiplicative Edge (2, 3): Additive KAN = {raw_add[2, 3]:.3f} | SM-KAN = {raw_sm[2, 3]:.3f}")
+    print(f"  Mixed Additive Edge (4, 5):        Additive KAN = {raw_add[4, 5]:.3f} | SM-KAN = {raw_sm[4, 5]:.3f}")
+    print(f"  Mixed Multiplicative Edge (2, 5):  Additive KAN = {raw_add[2, 5]:.3f} | SM-KAN = {raw_sm[2, 5]:.3f}")
+
+    return results
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Comprehensive L-SING Experiment Suite: Monotonic KAN Transport Maps vs UMNN"
+    )
+    parser.add_argument("--verify-theory", action="store_true", help="Run live verification of Theorems 4.4, 5.3, and derivative exactness")
+    parser.add_argument("--quick", action="store_true", help="Run quick profiling, theory check, and mixed coupling demo")
+    parser.add_argument("--mixed-coupling", action="store_true", help="Run 6D mixed additive/multiplicative coupling benchmark")
+    parser.add_argument("--generate-plots", action="store_true", help="Generate publication-ready figures in results/kan_benchmarks/figures")
+    parser.add_argument("--experiment", type=str, choices=["all", "profiling", "gaussian", "butterfly", "butterfly40d", "mixed", "theory"], default="all")
+    args = parser.parse_args()
+
     torch.manual_seed(42)
     np.random.seed(42)
 
@@ -602,33 +704,61 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 80)
-    print("STARTING FULL L-SING BENCHMARK SUITE: UMNN vs MONOTONIC KAN")
+    print("L-SING EXPERIMENTAL SUITE: MONOTONIC KAN TRANSPORT MAPS")
     print("=" * 80)
 
+    # 1. Theory Verification Mode
+    if args.verify_theory or args.experiment == "theory":
+        run_all_theory_verifications()
+        return
+
+    # 2. Quick Mode
+    if args.quick:
+        print("\n>>> RUNNING QUICK DEMO SUITE (Theory Verification + Profiling + Mixed Coupling)...")
+        run_all_theory_verifications()
+        prof_res = run_profiling_and_quadrature_breakdown()
+        mixed_res = run_mixed_coupling_benchmark(output_dir)
+        try:
+            import generate_benchmark_plots
+            generate_benchmark_plots.main()
+        except Exception as e:
+            print(f"Plot generation note: {e}")
+        print("\nQuick demo suite finished successfully!")
+        return
+
+    # 3. Targeted or Full Experiments
     all_results = {}
 
-    # 1. Profiling
-    profiling_res = run_profiling_and_quadrature_breakdown()
-    all_results["profiling"] = profiling_res
+    if args.experiment in ["all", "profiling"]:
+        all_results["profiling"] = run_profiling_and_quadrature_breakdown()
 
-    # 2. Gaussian Benchmark
-    gauss_res = run_gaussian_benchmark(output_dir)
-    all_results["gaussian_d10"] = gauss_res
+    if args.experiment in ["all", "gaussian"]:
+        all_results["gaussian_d10"] = run_gaussian_benchmark(output_dir)
 
-    # 3. Butterfly Sample Size Sensitivity
-    bf_sens_res = run_butterfly_benchmark_sample_sizes(output_dir)
-    all_results["butterfly_sample_size_sensitivity"] = bf_sens_res
+    if args.experiment in ["all", "butterfly"]:
+        all_results["butterfly_sample_size_sensitivity"] = run_butterfly_benchmark_sample_sizes(output_dir)
 
-    # 4. Butterfly High-Dimensional d=40
-    bf_40d_res = run_butterfly_40d_benchmark(output_dir)
-    all_results["butterfly_d40"] = bf_40d_res
+    if args.experiment in ["all", "butterfly40d"]:
+        all_results["butterfly_d40"] = run_butterfly_40d_benchmark(output_dir)
 
-    # Save complete JSON
+    if args.experiment in ["all", "mixed"] or args.mixed_coupling:
+        all_results["mixed_coupling_d6"] = run_mixed_coupling_benchmark(output_dir)
+
+    # Save summary JSON
     json_path = output_dir / "benchmark_raw_results.json"
-    with open(json_path, "w") as f:
-        json.dump(all_results, f, indent=2)
-    print(f"\nAll benchmark results successfully saved to {json_path}")
+    if all_results:
+        with open(json_path, "w") as f:
+            json.dump(all_results, f, indent=2)
+        print(f"\nBenchmark results successfully saved to {json_path}")
+
+    # Generate figures if requested
+    if args.generate_plots or args.experiment == "all":
+        try:
+            import generate_benchmark_plots
+            generate_benchmark_plots.main()
+        except Exception as e:
+            print(f"Could not auto-generate plots: {e}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
