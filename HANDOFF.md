@@ -37,11 +37,11 @@ models/
    - Evaluates 1st, 2nd, and 3rd-order derivatives ($S^k, \partial_k S^k, \partial_j S^k, \partial_j \partial_k S^k, \partial_k^2 S^k, \partial_j \partial_k^2 S^k$) in closed form via layer-by-layer `torch.einsum` recurrence across $(B, n_l, d)$ tensors without autograd.
 
 3. **Cumulative Softplus & Active Backbone Path Tracking:**
-   - Strictly enforces $c_{m+1} - c_m = \operatorname{softplus}(\theta_m) + \delta_{\text{mono}} > \delta_{\text{mono}} > 0$ with $C^1$ linear tail extrapolation as required by Section 6.1 of `theory/monotonic_kan_transport.tex`.
+   - Strictly enforces $c_{m+1} - c_m = \operatorname{softplus}(\theta_m) + \delta_{\text{mono}} > \delta_{\text{mono}} > 0$ with $C^1$ linear tail extrapolation as required by Section 6.1 of `theory/kan_transport.tex`.
    - Tracks the certified active backbone path $\mathcal{P}^* = (i_0^*, i_1^*, \dots, i_L^*)$ via `model.active_path` and `derivs["S_k_backbone"]`, verifying $\partial_k S^k(x) \ge D_{\mathcal{P}^*}(x) > 0$.
 
 4. **Default Regularization:**
-   - `penalty_type="functional"` is the default across all models and trainers (Equation 157 in `theory/monotonic_kan_transport.tex` / Equation 5 in Liaw et al.).
+   - `penalty_type="functional"` is the default across all models and trainers (Equation 157 in `theory/kan_transport.tex` / Equation 5 in Liaw et al.).
 
 ---
 

@@ -506,7 +506,7 @@ def test_deep_scale_modulated_kan_arbitrary_depth():
 
 def test_softplus_reparameterization_monotonicity_bounds():
     """
-    Verify exact compliance with Section 6.1 (Equations 615, 620, 627) of monotonic_kan_transport.tex:
+    Verify exact compliance with Section 6.1 (Equations 615, 620, 627) of kan_transport.tex:
         c_{m+1} = c_m + softplus(theta_m) + delta_mono
         c_m = c_1 + sum_{r=1}^{m-1} (softplus(theta_r) + delta_mono)
         c_{m+1} - c_m >= delta_mono > 0
@@ -543,7 +543,7 @@ def test_softplus_reparameterization_monotonicity_bounds():
 
 def test_forced_active_backbone_path_tracking():
     """
-    Verify compliance with Definition 5.1 and Theorem 5.2 of monotonic_kan_transport.tex:
+    Verify compliance with Definition 5.1 and Theorem 5.2 of kan_transport.tex:
     Strict target monotonicity must be certified by an explicit active backbone path P^*:
         partial_k S^k(x) >= D_{P^*}(x) = prod_{l=1}^L phi'_{l, i_l^*, i_{l-1}^*}(x^{(l-1)}_{i_{l-1}^*}) >= epsilon > 0.
     """
