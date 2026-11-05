@@ -127,7 +127,7 @@ def main():
         print("CUDA requested but not available. Falling back to CPU.")
         dev_str = "cpu"
 
-    output_dir = REPO_ROOT / "results/kan_benchmarks"
+    output_dir = REPO_ROOT / "results/kan_benchmarks" / ("quick" if args.quick else "")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 75)
@@ -150,7 +150,7 @@ def main():
 
     for d in dimensions:
         print(f"\n--- Dimension d = {d} ---")
-        umnn = MonotonicNN(d, [16, 32], 50, dev=dev_str)
+        umnn = MonotonicNN(d, [16, 32], 50, dev=dev_str).to(dev_str)
         kan = MonotonicKANMap(d, target_index=0, hidden_dim=4, grid_size=8, dev=dev_str)
 
         opt_u = optim.Adam(umnn.parameters(), lr=0.01)

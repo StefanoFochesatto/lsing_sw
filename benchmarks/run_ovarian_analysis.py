@@ -128,7 +128,7 @@ def main():
         print("CUDA requested but not available. Falling back to CPU.")
         dev_str = "cpu"
 
-    output_dir = REPO_ROOT / "results/kan_benchmarks"
+    output_dir = REPO_ROOT / "results/kan_benchmarks" / ("quick" if args.quick else "")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 80)

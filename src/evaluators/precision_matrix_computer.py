@@ -18,11 +18,14 @@ class PrecisionMatrixComputer:
             dev (str | torch.device | None): Evaluation device. Defaults to the device of the
                 first model's parameters.
         """
-        self.trained_models = trained_models
         self.num_features = num_features
         if dev is None:
             dev = next(trained_models[0].parameters()).device if trained_models else "cpu"
         self.device = torch.device(dev)
+        self.trained_models = [model.to(self.device) for model in trained_models]
+        for model in self.trained_models:
+            if hasattr(model, "device"):
+                model.device = self.device
         self.test_data = test_data.to(self.device)
 
     def compute(self):
