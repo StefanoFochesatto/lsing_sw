@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-Butterfly Benchmark (d=10) Sample Size Sensitivity:
-Compares UMNN vs MonotonicKAN across sample sizes M in {500, 1000, 5000}.
-Measures edge recovery (F1, FPR, Precision, Recall at tau in {0.2, 0.1, 0.05}),
-training time per variable, and evaluation speed.
+Butterfly Benchmark (d=10): UMNN Baseline vs MonotonicKAN (Functional Regularization)
+across sample sizes M in {500, 1000, 5000}.
 """
 
 import sys
 import time
 import json
-import tracemalloc
+import argparse
 import numpy as np
 import torch
 from pathlib import Path
@@ -68,14 +66,25 @@ def compute_graph_metrics(precision_matrix, true_adj, thresholds=(0.2, 0.1, 0.05
 
 
 def main():
-    torch.manual_seed(42)
-    np.random.seed(42)
+    parser = argparse.ArgumentParser(description="Butterfly Benchmark Sample Size Sensitivity: UMNN vs MonotonicKAN")
+    parser.add_argument("--device", type=str, default="cpu", help="Device (cpu or cuda)")
+    parser.add_argument("--quick", action="store_true", help="Quick mode (fewer sample sizes and epochs)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    dev_str = args.device
+    if dev_str == "cuda" and not torch.cuda.is_available():
+        print("CUDA requested but not available. Falling back to CPU.")
+        dev_str = "cpu"
 
     output_dir = REPO_ROOT / "results/kan_benchmarks"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print("BUTTERFLY BENCHMARK (d=10) SAMPLE SIZE SENSITIVITY")
+    print(f"BUTTERFLY BENCHMARK (d=10) SAMPLE SIZE SENSITIVITY [Device: {dev_str.upper()}]")
     print("=" * 70)
 
     full_trn = torch.tensor(np.loadtxt(REPO_ROOT / "data/butterfly/bf_trn_5000_10d.txt", delimiter=","), dtype=torch.float32)
@@ -84,9 +93,18 @@ def main():
 
     d = 10
     true_adj = get_butterfly_ground_truth(d)
-    sample_sizes = [500, 1000, 5000]
-    regs = [0.1, 0.01, 0.001]
-    max_epochs = 30
+
+    if args.quick:
+        sample_sizes = [500, 1000]
+        regs = [0.01]
+        max_epochs = 5
+        val_data = val_data[:200]
+        tst_data = tst_data[:200]
+        print(f"QUICK MODE: sample_sizes={sample_sizes}, regs=[0.01], max_epochs=5")
+    else:
+        sample_sizes = [500, 1000, 5000]
+        regs = [0.1, 0.01, 0.001]
+        max_epochs = 30
 
     results = {}
 
@@ -95,11 +113,11 @@ def main():
         trn_M = full_trn[:M]
         results[str(M)] = {}
 
-        # 1. UMNN
+        # 1. UMNN Baseline
         print(f"  [M={M}] Training UMNN...")
         t0 = time.perf_counter()
-        base_map = [MonotonicNN(d, [16, 32], 50, "cpu") for _ in range(d)]
-        trainer = MapTrainer(base_map, d, [16, 32], 50, 0.01, max_epochs)
+        base_map = [MonotonicNN(d, [16, 32], 50, dev=dev_str) for _ in range(d)]
+        trainer = MapTrainer(base_map, d, [16, 32], 50, 0.01, max_epochs, dev=dev_str)
         umnn_models = []
         for k in range(d):
             others = [j for j in range(d) if j != k]
@@ -108,7 +126,7 @@ def main():
         umnn_train_time = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        ev = PrecisionMatrixComputer(umnn_models, tst_data, d)
+        ev = PrecisionMatrixComputer(umnn_models, tst_data, d, dev=dev_str)
         umnn_prec = ev.make_symmetric(ev.compute())
         umnn_eval_time = time.perf_counter() - t0
         umnn_metrics = compute_graph_metrics(umnn_prec, true_adj)
@@ -124,8 +142,8 @@ def main():
         # 2. MonotonicKAN (Functional Penalty)
         print(f"  [M={M}] Training MonotonicKAN (Functional)...")
         t0 = time.perf_counter()
-        base_map_kan = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="functional") for k in range(d)]
-        kan_trainer = KANTrainer(base_map_kan, d, hidden_dim=4, grid_size=8, penalty_type="functional", max_epochs=max_epochs)
+        base_map_kan = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="functional", dev=dev_str) for k in range(d)]
+        kan_trainer = KANTrainer(base_map_kan, d, hidden_dim=4, grid_size=8, penalty_type="functional", max_epochs=max_epochs, dev=dev_str)
         kan_models = []
         for k in range(d):
             others = [j for j in range(d) if j != k]
@@ -134,14 +152,13 @@ def main():
         kan_train_time = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        comp = KANPrecisionComputer(kan_models, tst_data, d)
+        comp = KANPrecisionComputer(kan_models, tst_data.to(dev_str), d)
         kan_prec = comp.make_symmetric(comp.compute())
         kan_eval_time = time.perf_counter() - t0
         kan_metrics = compute_graph_metrics(kan_prec, true_adj)
 
-        results[str(M)]["MonotonicKAN"] = {
+        results[str(M)]["MonotonicKAN_Functional"] = {
             "penalty_type": "functional",
-
             "train_time_sec": kan_train_time,
             "eval_time_sec": kan_eval_time,
             "metrics": kan_metrics,

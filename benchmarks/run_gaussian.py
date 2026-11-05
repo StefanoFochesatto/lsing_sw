@@ -11,6 +11,7 @@ Measures:
 import sys
 import time
 import json
+import argparse
 import tracemalloc
 import numpy as np
 import torch
@@ -69,14 +70,25 @@ def compute_graph_metrics(precision_matrix, true_adj, thresholds=(0.2, 0.1, 0.05
 
 
 def main():
-    torch.manual_seed(42)
-    np.random.seed(42)
+    parser = argparse.ArgumentParser(description="Gaussian Benchmark (d=10): UMNN vs MonotonicKAN")
+    parser.add_argument("--device", type=str, default="cpu", help="Device (cpu or cuda)")
+    parser.add_argument("--quick", action="store_true", help="Quick mode (fewer samples and epochs)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    dev_str = args.device
+    if dev_str == "cuda" and not torch.cuda.is_available():
+        print("CUDA requested but not available. Falling back to CPU.")
+        dev_str = "cpu"
 
     output_dir = REPO_ROOT / "results/kan_benchmarks"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print("GAUSSIAN BENCHMARK (d=10)")
+    print(f"GAUSSIAN BENCHMARK (d=10) [Device: {dev_str.upper()}]")
     print("=" * 70)
 
     trn_data = torch.tensor(np.loadtxt(REPO_ROOT / "data/gauss/g_trn_5000_10d.txt", delimiter=","), dtype=torch.float32)
@@ -85,29 +97,38 @@ def main():
 
     d = 10
     true_adj = get_gaussian_ground_truth(d)
-    regs = [0.1, 0.01, 0.001, 0.0]
-    max_epochs = 35
+
+    if args.quick:
+        trn_data = trn_data[:500]
+        val_data = val_data[:200]
+        tst_data = tst_data[:200]
+        regs = [0.01]
+        max_epochs = 5
+        print("QUICK MODE: trn=500, regs=[0.01], max_epochs=5")
+    else:
+        regs = [0.1, 0.01, 0.001, 0.0]
+        max_epochs = 35
 
     results = {}
 
     # 1. UMNN Baseline
-    print("1/3: Training UMNN...")
+    print("1/2: Training UMNN...")
     tracemalloc.start()
     t0 = time.perf_counter()
-    base_map = [MonotonicNN(d, [16, 32], 50, "cpu") for _ in range(d)]
-    trainer = MapTrainer(base_map, d, [16, 32], 50, 0.01, max_epochs)
+    base_map = [MonotonicNN(d, [16, 32], 50, dev=dev_str) for _ in range(d)]
+    trainer = MapTrainer(base_map, d, [16, 32], 50, 0.01, max_epochs, dev=dev_str)
     umnn_models = []
     for k in range(d):
         others = [j for j in range(d) if j != k]
         best_m, _, _ = trainer.train_model(trn_data, k, others, regs, val_data)
         umnn_models.append(best_m)
     umnn_train_time = time.perf_counter() - t0
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     umnn_mem_mb = peak / (1024 * 1024)
 
     t0 = time.perf_counter()
-    ev = PrecisionMatrixComputer(umnn_models, tst_data, d)
+    ev = PrecisionMatrixComputer(umnn_models, tst_data, d, dev=dev_str)
     umnn_prec = ev.make_symmetric(ev.compute())
     umnn_eval_time = time.perf_counter() - t0
     umnn_metrics = compute_graph_metrics(umnn_prec, true_adj)
@@ -125,27 +146,26 @@ def main():
     print("2/2: Training MonotonicKAN (Functional Penalty)...")
     tracemalloc.start()
     t0 = time.perf_counter()
-    base_map_kan_func = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="functional") for k in range(d)]
-    kan_trainer_func = KANTrainer(base_map_kan_func, d, hidden_dim=4, grid_size=8, penalty_type="functional", max_epochs=max_epochs)
+    base_map_kan_func = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="functional", dev=dev_str) for k in range(d)]
+    kan_trainer_func = KANTrainer(base_map_kan_func, d, hidden_dim=4, grid_size=8, penalty_type="functional", max_epochs=max_epochs, dev=dev_str)
     kan_func_models = []
     for k in range(d):
         others = [j for j in range(d) if j != k]
         best_m, _, _, _ = kan_trainer_func.train_model(trn_data, k, others, regs, val_data)
         kan_func_models.append(best_m)
     kan_func_train_time = time.perf_counter() - t0
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     kan_func_mem_mb = peak / (1024 * 1024)
 
     t0 = time.perf_counter()
-    comp = KANPrecisionComputer(kan_func_models, tst_data, d)
+    comp = KANPrecisionComputer(kan_func_models, tst_data.to(dev_str), d)
     kan_func_prec = comp.make_symmetric(comp.compute())
     kan_func_eval_time = time.perf_counter() - t0
     kan_func_metrics = compute_graph_metrics(kan_func_prec, true_adj)
 
-    results["MonotonicKAN"] = {
+    results["MonotonicKAN_Functional"] = {
         "penalty_type": "functional",
-
         "train_time_sec": kan_func_train_time,
         "eval_time_sec": kan_func_eval_time,
         "peak_mem_mb": kan_func_mem_mb,
@@ -154,7 +174,6 @@ def main():
     }
     print(f"   KAN Functional Done: Train={kan_func_train_time:.1f}s, Eval={kan_func_eval_time:.2f}s, tau=0.1 F1={kan_func_metrics['0.1']['f1']:.3f}")
 
-    # Save output JSON
     out_json = output_dir / "gaussian_benchmark.json"
     with open(out_json, "w") as f:
         json.dump(results, f, indent=2)

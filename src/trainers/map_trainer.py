@@ -8,7 +8,7 @@ class MapTrainer:
     """
     Handles training of UMNN-based models for learning mappings.
     """
-    def __init__(self, base_map, num_features, hidden_layers, num_steps, learning_rate, max_epochs):
+    def __init__(self, base_map, num_features, hidden_layers, num_steps, learning_rate, max_epochs, dev="cpu"):
         """
         Initialize the MapTrainer.
 
@@ -19,6 +19,7 @@ class MapTrainer:
             num_steps (int): Number of steps for integral approximation.
             learning_rate (float): Learning rate for training.
             max_epochs (int): Maximum number of training epochs.
+            dev (str | torch.device): Device on which models are trained ('cpu' or 'cuda').
         """
         self.base_map = base_map
         self.num_features = num_features
@@ -26,6 +27,7 @@ class MapTrainer:
         self.num_steps = num_steps
         self.learning_rate = learning_rate
         self.max_epochs = max_epochs
+        self.device = torch.device(dev)
 
     def train_model(self, training_data, target_index, other_indices, regularizations, validation_data):
         """
@@ -41,13 +43,16 @@ class MapTrainer:
         Returns:
             tuple: Best model, optimal regularization value, and all trained models.
         """
+        training_data = training_data.to(self.device)
+        validation_data = validation_data.to(self.device)
         best_validation_loss = float('inf')
         optimal_regularization = 0
         optimal_model = None
         models_per_regularization = {}
 
         for reg_value in tqdm(regularizations, desc=f"Training feature {target_index}", leave=False):
-            model = copy.deepcopy(self.base_map)[target_index]
+            model = copy.deepcopy(self.base_map[target_index]).to(self.device)
+            model.device = self.device
             optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
             early_stop_counter = 0
             best_epoch_loss = float('inf')

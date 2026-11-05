@@ -7,7 +7,7 @@ class PrecisionMatrixComputer:
     """
     Computes precision matrices based on trained UMNN models.
     """
-    def __init__(self, trained_models, test_data, num_features):
+    def __init__(self, trained_models, test_data, num_features, dev=None):
         """
         Initialize the PrecisionMatrixComputer.
 
@@ -15,14 +15,67 @@ class PrecisionMatrixComputer:
             trained_models (list): List of trained UMNN models.
             test_data (torch.Tensor): Test data tensor.
             num_features (int): Number of features in the dataset.
+            dev (str | torch.device | None): Evaluation device. Defaults to the device of the
+                first model's parameters.
         """
         self.trained_models = trained_models
-        self.test_data = test_data
         self.num_features = num_features
+        if dev is None:
+            dev = next(trained_models[0].parameters()).device if trained_models else "cpu"
+        self.device = torch.device(dev)
+        self.test_data = test_data.to(self.device)
 
     def compute(self):
         """
         Computes the precision matrix.
+
+        The derivatives of S^k do not depend on the column index i, so each row's
+        first/second/third derivatives are computed once and indexed for every i. The
+        entries are identical to `compute_unoptimized` (the original implementation,
+        which recomputes all derivatives for each of the d - 1 columns).
+
+        Returns:
+            np.ndarray: Computed precision matrix.
+        """
+        precision_matrix = []
+        for feature_idx, model in enumerate(self.trained_models):
+            model.eval()
+            non_target_indices = [i for i in range(self.test_data.shape[1]) if i != feature_idx]
+
+            data = self.test_data.detach().requires_grad_(True)
+            non_target_data = data[:, non_target_indices]
+            target_data = data[:, [feature_idx]]
+            output = model(target_data, non_target_data)
+
+            first_derivative = torch.autograd.grad(output, data, torch.ones_like(output), create_graph=True)[0]
+            log_first = torch.log(torch.abs(first_derivative))
+            second_derivative = torch.autograd.grad(
+                log_first[:, [feature_idx]], data, torch.ones_like(log_first[:, [feature_idx]]), create_graph=True
+            )[0]
+            third_derivative = torch.autograd.grad(
+                second_derivative[:, [feature_idx]], data,
+                torch.ones_like(second_derivative[:, [feature_idx]]), retain_graph=True
+            )[0]
+
+            first_half = -0.5 * (output**2)
+            first_half_derivative = torch.autograd.grad(
+                first_half, data, torch.ones_like(first_half), create_graph=True
+            )[0]
+            second_half_derivative = torch.autograd.grad(
+                first_half_derivative[:, [feature_idx]], data,
+                torch.ones_like(first_half_derivative[:, [feature_idx]])
+            )[0]
+
+            row = (third_derivative.abs().mean(dim=0) + second_half_derivative.abs().mean(dim=0)).detach().cpu().numpy()
+            row = row.astype(float)
+            row[feature_idx] = 1  # Diagonal elements are set to 1
+            precision_matrix.append(row.tolist())
+        return np.array(precision_matrix)
+
+    def compute_unoptimized(self):
+        """
+        Original reference implementation (recomputes all derivatives for every column).
+        Kept for benchmarking the evaluator itself; prefer `compute`.
 
         Returns:
             np.ndarray: Computed precision matrix.
