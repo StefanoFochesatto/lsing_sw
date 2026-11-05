@@ -5,6 +5,8 @@ from models.kan_transport import (
     BSplineBasis,
     CubicHermiteBasis,
 )
+from models.root_finding import invert_coordinate_map, invert_triangular_map
+from models.sm_kan_density import SMKANDensityEstimator
 
 __all__ = [
     "UMNNMAFFlow",
@@ -15,4 +17,7 @@ __all__ = [
     "ScaleModulatedKANMap",
     "BSplineBasis",
     "CubicHermiteBasis",
+    "invert_coordinate_map",
+    "invert_triangular_map",
+    "SMKANDensityEstimator",
 ]

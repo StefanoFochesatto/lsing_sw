@@ -1,0 +1,42 @@
+{
+  "power": {
+    "num_features": 6,
+    "source_type": "structural_benchmark",
+    "n_train": 3000,
+    "n_test": 9000,
+    "sm_kan": {
+      "test_ll": -7.430165767669678,
+      "train_time_sec": 26.2366630010074,
+      "sample_time_1000": 0.8878882480203174,
+      "sample_rate_hz": 1126.2678633596659,
+      "params": 1534
+    },
+    "real_nvp": {
+      "test_ll": -6.668410778045654,
+      "train_time_sec": 4.076072226976976,
+      "sample_time_1000": 0.013918897951953113,
+      "sample_rate_hz": 71844.76841858582,
+      "params": 28836
+    }
+  },
+  "gas": {
+    "num_features": 8,
+    "source_type": "structural_benchmark",
+    "n_train": 3000,
+    "n_test": 9000,
+    "sm_kan": {
+      "test_ll": -11.153702735900879,
+      "train_time_sec": 36.93370795599185,
+      "sample_time_1000": 1.6125059939804487,
+      "sample_rate_hz": 620.1527335296993,
+      "params": 2574
+    },
+    "real_nvp": {
+      "test_ll": -25.29195213317871,
+      "train_time_sec": 3.175410074996762,
+      "sample_time_1000": 0.01607121800770983,
+      "sample_rate_hz": 62223.03745243645,
+      "params": 30000
+    }
+  }
+}
