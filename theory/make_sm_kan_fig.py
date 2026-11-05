@@ -384,11 +384,11 @@ def generate_sm_kan_liu_style():
     )
 
     # \exp(\cdot) > 0 block
-    # Definition of E \coloneqq \exp(s_max \tanh(\sigma / s_max)) block
+    # Keep the complete scale definition inside the module with horizontal padding.
     exp_box = FancyBboxPatch(
-        (x_exp - 1.45, y_exp - 0.35),
-        2.90,
-        0.70,
+        (x_exp - 1.85, y_exp - 0.40),
+        3.70,
+        0.80,
         boxstyle="round,pad=0.06,rounding_size=0.15",
         facecolor=BLUE_BOX_FILL,
         edgecolor=BLUE_DARK,
@@ -490,8 +490,8 @@ def generate_sm_kan_liu_style():
         zorder=5,
     )
     ax.text(
-        6.45,
-        6.70,
+        6.15,
+        6.96,
         r"$E$",
         ha="center",
         va="center",
