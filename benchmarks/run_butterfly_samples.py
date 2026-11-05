@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from models.UMNN import MonotonicNN
-from models.kan_transport import MonotonicKANMap
+from models.monotonic_kan import MonotonicKANMap
 from trainers.map_trainer import MapTrainer
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from evaluators.precision_matrix_computer import PrecisionMatrixComputer
@@ -139,39 +139,15 @@ def main():
         kan_eval_time = time.perf_counter() - t0
         kan_metrics = compute_graph_metrics(kan_prec, true_adj)
 
-        results[str(M)]["MonotonicKAN_Functional"] = {
+        results[str(M)]["MonotonicKAN"] = {
+            "penalty_type": "functional",
+
             "train_time_sec": kan_train_time,
             "eval_time_sec": kan_eval_time,
             "metrics": kan_metrics,
             "precision_matrix": kan_prec.tolist(),
         }
         print(f"    KAN Func (M={M}): Train={kan_train_time:.1f}s, Eval={kan_eval_time:.2f}s, tau=0.1 F1={kan_metrics['0.1']['f1']:.3f}, FPR={kan_metrics['0.1']['fpr']:.3f}")
-
-        # 3. MonotonicKAN (Group Lasso Penalty)
-        print(f"  [M={M}] Training MonotonicKAN (Group Lasso)...")
-        t0 = time.perf_counter()
-        base_map_grp = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="coeff_group") for k in range(d)]
-        kan_trainer_grp = KANTrainer(base_map_grp, d, hidden_dim=4, grid_size=8, penalty_type="coeff_group", max_epochs=max_epochs)
-        kan_grp_models = []
-        for k in range(d):
-            others = [j for j in range(d) if j != k]
-            best_m, _, _, _ = kan_trainer_grp.train_model(trn_M, k, others, regs, val_data)
-            kan_grp_models.append(best_m)
-        kan_grp_train_time = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
-        comp_grp = KANPrecisionComputer(kan_grp_models, tst_data, d)
-        kan_grp_prec = comp_grp.make_symmetric(comp_grp.compute())
-        kan_grp_eval_time = time.perf_counter() - t0
-        kan_grp_metrics = compute_graph_metrics(kan_grp_prec, true_adj)
-
-        results[str(M)]["MonotonicKAN_GroupLasso"] = {
-            "train_time_sec": kan_grp_train_time,
-            "eval_time_sec": kan_grp_eval_time,
-            "metrics": kan_grp_metrics,
-            "precision_matrix": kan_grp_prec.tolist(),
-        }
-        print(f"    KAN Group (M={M}): Train={kan_grp_train_time:.1f}s, Eval={kan_grp_eval_time:.2f}s, tau=0.1 F1={kan_grp_metrics['0.1']['f1']:.3f}, FPR={kan_grp_metrics['0.1']['fpr']:.3f}")
 
         # Save after each M
         out_json = output_dir / "butterfly_sample_sizes.json"

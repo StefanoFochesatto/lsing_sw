@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from models.kan_transport import BSplineBasis, MonotonicKANMap, ScaleModulatedKANMap
+from models.monotonic_kan import BSplineBasis, MonotonicKANMap, ScaleModulatedKANMap
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from datasets.mixed_coupling_generator import (
     generate_mixed_coupling_dataset,

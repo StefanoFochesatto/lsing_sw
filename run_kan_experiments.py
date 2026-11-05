@@ -30,7 +30,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from models.UMNN import MonotonicNN
-from models.kan_transport import MonotonicKANMap, BSplineBasis
+from models.monotonic_kan import MonotonicKANMap, BSplineBasis
 from trainers.map_trainer import MapTrainer
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from evaluators.precision_matrix_computer import PrecisionMatrixComputer

@@ -1,12 +1,11 @@
 from setuptools import setup
 
 setup(
-    name='UMNN',
+    name='lsing_models',
     version='0.1',
-    packages=['UMNN'],
+    packages=['UMNN', 'monotonic_kan'],
     url='',
     license='MIT License',
-    author='awehenkel',
-    author_email='antoine.wehenkel@gmail.com',
-    description=''
+    author='sliaw',
+    description='Models for L-SING (UMNN and Monotonic KAN Transport Maps)',
 )

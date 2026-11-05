@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Benchmark: Scale-Modulated Monotonic KAN vs Additive Monotonic KAN vs UMNN
+Benchmark: Scale-Modulated Monotonic KAN (Functional Regularization)
 on the 10-Dimensional Butterfly Distribution.
 """
 
@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from models.UMNN import MonotonicNN
-from models.kan_transport import MonotonicKANMap, ScaleModulatedKANMap
+from models.monotonic_kan import ScaleModulatedKANMap
 from trainers.map_trainer import MapTrainer
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from evaluators.precision_matrix_computer import PrecisionMatrixComputer
@@ -111,32 +111,6 @@ def main():
             "precision_matrix": sm_prec.tolist()
         }
         print(f"    ScaleModulatedKAN (M={M}): Train={sm_train_time:.1f}s, Eval={sm_eval_time:.3f}s, tau=0.2 F1={sm_metrics['0.2']['f1']:.3f}, tau=0.1 F1={sm_metrics['0.1']['f1']:.3f}")
-
-        # 2. Additive Monotonic KAN (Baseline)
-        print(f"  Training Additive MonotonicKANMap (M={M})...")
-        base_map_add = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, conditioning_scale=False) for k in range(d)]
-        trainer_add = KANTrainer(base_map_add, d, hidden_dim=4, grid_size=8, max_epochs=max_epochs)
-        t0 = time.perf_counter()
-        add_models = []
-        for k in range(d):
-            others = [j for j in range(d) if j != k]
-            best_m, _, _, _ = trainer_add.train_model(trn_M, k, others, regs, val_data)
-            add_models.append(best_m)
-        add_train_time = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
-        comp_add = KANPrecisionComputer(add_models, tst_data, d)
-        add_prec = comp_add.make_symmetric(comp_add.compute())
-        add_eval_time = time.perf_counter() - t0
-        add_metrics = compute_graph_metrics(add_prec, true_adj)
-
-        results[str(M)]["AdditiveMonotonicKAN"] = {
-            "train_time_sec": add_train_time,
-            "eval_time_sec": add_eval_time,
-            "metrics": add_metrics,
-            "precision_matrix": add_prec.tolist()
-        }
-        print(f"    AdditiveMonotonicKAN (M={M}): Train={add_train_time:.1f}s, Eval={add_eval_time:.3f}s, tau=0.2 F1={add_metrics['0.2']['f1']:.3f}, tau=0.1 F1={add_metrics['0.1']['f1']:.3f}")
 
     out_json = output_dir / "scale_modulated_butterfly_results.json"
     with open(out_json, "w") as f:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gaussian Benchmark (d=10): UMNN vs MonotonicKAN (Functional & Group Lasso).
+Gaussian Benchmark (d=10): UMNN vs MonotonicKAN (Functional Regularization).
 Measures:
 - Edge recovery: F1, FPR, Precision, Recall at tau in {0.2, 0.1, 0.05}
 - Training wall-clock time
@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from models.UMNN import MonotonicNN
-from models.kan_transport import MonotonicKANMap
+from models.monotonic_kan import MonotonicKANMap
 from trainers.map_trainer import MapTrainer
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from evaluators.precision_matrix_computer import PrecisionMatrixComputer
@@ -122,7 +122,7 @@ def main():
     print(f"   UMNN Done: Train={umnn_train_time:.1f}s, Eval={umnn_eval_time:.2f}s, tau=0.1 F1={umnn_metrics['0.1']['f1']:.3f}")
 
     # 2. MonotonicKAN (Functional Penalty)
-    print("2/3: Training MonotonicKAN (Functional Penalty)...")
+    print("2/2: Training MonotonicKAN (Functional Penalty)...")
     tracemalloc.start()
     t0 = time.perf_counter()
     base_map_kan_func = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="functional") for k in range(d)]
@@ -143,7 +143,9 @@ def main():
     kan_func_eval_time = time.perf_counter() - t0
     kan_func_metrics = compute_graph_metrics(kan_func_prec, true_adj)
 
-    results["MonotonicKAN_Functional"] = {
+    results["MonotonicKAN"] = {
+        "penalty_type": "functional",
+
         "train_time_sec": kan_func_train_time,
         "eval_time_sec": kan_func_eval_time,
         "peak_mem_mb": kan_func_mem_mb,
@@ -151,37 +153,6 @@ def main():
         "precision_matrix": kan_func_prec.tolist(),
     }
     print(f"   KAN Functional Done: Train={kan_func_train_time:.1f}s, Eval={kan_func_eval_time:.2f}s, tau=0.1 F1={kan_func_metrics['0.1']['f1']:.3f}")
-
-    # 3. MonotonicKAN (Group Lasso Penalty)
-    print("3/3: Training MonotonicKAN (Group Lasso Penalty)...")
-    tracemalloc.start()
-    t0 = time.perf_counter()
-    base_map_kan_grp = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="coeff_group") for k in range(d)]
-    kan_trainer_grp = KANTrainer(base_map_kan_grp, d, hidden_dim=4, grid_size=8, penalty_type="coeff_group", max_epochs=max_epochs)
-    kan_grp_models = []
-    for k in range(d):
-        others = [j for j in range(d) if j != k]
-        best_m, _, _, _ = kan_trainer_grp.train_model(trn_data, k, others, regs, val_data)
-        kan_grp_models.append(best_m)
-    kan_grp_train_time = time.perf_counter() - t0
-    current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    kan_grp_mem_mb = peak / (1024 * 1024)
-
-    t0 = time.perf_counter()
-    comp_grp = KANPrecisionComputer(kan_grp_models, tst_data, d)
-    kan_grp_prec = comp_grp.make_symmetric(comp_grp.compute())
-    kan_grp_eval_time = time.perf_counter() - t0
-    kan_grp_metrics = compute_graph_metrics(kan_grp_prec, true_adj)
-
-    results["MonotonicKAN_GroupLasso"] = {
-        "train_time_sec": kan_grp_train_time,
-        "eval_time_sec": kan_grp_eval_time,
-        "peak_mem_mb": kan_grp_mem_mb,
-        "metrics": kan_grp_metrics,
-        "precision_matrix": kan_grp_prec.tolist(),
-    }
-    print(f"   KAN Group Lasso Done: Train={kan_grp_train_time:.1f}s, Eval={kan_grp_eval_time:.2f}s, tau=0.1 F1={kan_grp_metrics['0.1']['f1']:.3f}")
 
     # Save output JSON
     out_json = output_dir / "gaussian_benchmark.json"

@@ -4,7 +4,6 @@ High-Dimensional Butterfly Benchmark (d=40):
 Evaluates scalability of MonotonicKAN on d=40 (20 true edges among 780 pairs).
 Benchmarks:
 - MonotonicKAN (Functional penalty)
-- MonotonicKAN (Group Lasso penalty)
 - UMNN baseline (measured per-variable cost + projected 40-variable time)
 """
 
@@ -21,7 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from models.UMNN import MonotonicNN
-from models.kan_transport import MonotonicKANMap
+from models.monotonic_kan import MonotonicKANMap
 from trainers.map_trainer import MapTrainer
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 from evaluators.precision_matrix_computer import PrecisionMatrixComputer
@@ -92,7 +91,7 @@ def main():
     results = {}
 
     # 1. MonotonicKAN (Functional Penalty)
-    print("1/3: Training MonotonicKAN d=40 (Functional Penalty)...")
+    print("1/2: Training MonotonicKAN d=40 (Functional Penalty)...")
     tracemalloc.start()
     t0 = time.perf_counter()
     base_map = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="functional") for k in range(d)]
@@ -113,7 +112,9 @@ def main():
     kan_eval_time = time.perf_counter() - t0
     kan_metrics = compute_graph_metrics(kan_prec, true_adj)
 
-    results["MonotonicKAN_Functional"] = {
+    results["MonotonicKAN"] = {
+        "penalty_type": "functional",
+
         "train_time_sec": kan_train_time,
         "eval_time_sec": kan_eval_time,
         "peak_mem_mb": kan_mem_mb,
@@ -124,41 +125,8 @@ def main():
     }
     print(f"   KAN Functional d=40 Done: Train={kan_train_time:.1f}s ({kan_train_time/d:.2f}s/var), Eval={kan_eval_time:.2f}s, tau=0.1 F1={kan_metrics['0.1']['f1']:.3f}, FPR={kan_metrics['0.1']['fpr']:.4f}")
 
-    # 2. MonotonicKAN (Group Lasso Penalty)
-    print("2/3: Training MonotonicKAN d=40 (Group Lasso Penalty)...")
-    tracemalloc.start()
-    t0 = time.perf_counter()
-    base_map_grp = [MonotonicKANMap(d, target_index=k, hidden_dim=4, grid_size=8, penalty_type="coeff_group") for k in range(d)]
-    trainer_grp = KANTrainer(base_map_grp, d, hidden_dim=4, grid_size=8, penalty_type="coeff_group", max_epochs=max_epochs)
-    kan_grp_models = []
-    for k in range(d):
-        others = [j for j in range(d) if j != k]
-        best_m, _, _, _ = trainer_grp.train_model(trn_data, k, others, regs, val_data)
-        kan_grp_models.append(best_m)
-    kan_grp_train_time = time.perf_counter() - t0
-    current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    kan_grp_mem_mb = peak / (1024 * 1024)
-
-    t0 = time.perf_counter()
-    comp_grp = KANPrecisionComputer(kan_grp_models, tst_data, d)
-    kan_grp_prec = comp_grp.make_symmetric(comp_grp.compute())
-    kan_grp_eval_time = time.perf_counter() - t0
-    kan_grp_metrics = compute_graph_metrics(kan_grp_prec, true_adj)
-
-    results["MonotonicKAN_GroupLasso"] = {
-        "train_time_sec": kan_grp_train_time,
-        "eval_time_sec": kan_grp_eval_time,
-        "peak_mem_mb": kan_grp_mem_mb,
-        "train_time_per_var_sec": kan_grp_train_time / d,
-        "eval_time_per_var_sec": kan_grp_eval_time / d,
-        "metrics": kan_grp_metrics,
-        "precision_matrix": kan_grp_prec.tolist(),
-    }
-    print(f"   KAN Group Lasso d=40 Done: Train={kan_grp_train_time:.1f}s ({kan_grp_train_time/d:.2f}s/var), Eval={kan_grp_eval_time:.2f}s, tau=0.1 F1={kan_grp_metrics['0.1']['f1']:.3f}, FPR={kan_grp_metrics['0.1']['fpr']:.4f}")
-
     # 3. Benchmark UMNN per-variable cost on d=40
-    print("3/3: Measuring UMNN per-variable baseline cost on d=40...")
+    print("2/2: Measuring UMNN per-variable baseline cost on d=40...")
     tracemalloc.start()
     t0 = time.perf_counter()
     base_map_sub = [MonotonicNN(d, [16, 32], 50, "cpu")]

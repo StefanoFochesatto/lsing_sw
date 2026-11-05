@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from models.kan_transport import ScaleModulatedKANMap
+from models.monotonic_kan import ScaleModulatedKANMap
 from trainers.kan_trainer import KANTrainer, KANPrecisionComputer
 
 

@@ -3,11 +3,10 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from models.kan_transport import (
+from models.monotonic_kan import (
     MonotonicKANMap,
     ScaleModulatedKANMap,
     BSplineBasis,
-    CubicHermiteBasis,
 )
 
 
@@ -57,16 +56,6 @@ def test_spline_basis_derivatives_vs_autograd():
     assert torch.allclose(g3, g3_analytic, atol=1e-12), "3rd derivative mismatch"
 
 
-def test_cubic_hermite_basis():
-    """Verify CubicHermiteBasis evaluation and derivative correctness."""
-    grid = torch.linspace(-4.0, 4.0, 9, dtype=torch.float64)
-    x = torch.tensor([-2.5, 0.0, 2.5], dtype=torch.float64)
-    vals, d1_vals, k = CubicHermiteBasis.eval_hermite(x, grid)
-    h00, h10, h01, h11 = vals
-    assert torch.all(h00 + h01 <= 1.0 + 1e-6), "Partition bounds hold for Hermite interpolation"
-    assert len(k) == 3, "Interval count matches input"
-
-
 def test_spline_linear_extrapolation():
     """Verify linear tail extrapolation outside [grid_min, grid_max]."""
     grid = BSplineBasis.build_grid(-3.0, 3.0, num_intervals=6, degree=3, dtype=torch.float64)
@@ -103,10 +92,7 @@ def test_strict_monotonicity():
     torch.manual_seed(123)
     model = MonotonicKANMap(num_features=4, target_index=1, hidden_dim=4, grid_size=6)
 
-    with torch.no_grad():
-        model.inner_cond_weights.normal_(0, 0.5)
-        model.inner_target_delta.normal_(0, 1.0)
-        model.outer_delta.normal_(0, 1.0)
+    model.randomize_parameters_(std=0.5, delta_std=1.0)
 
     x_test = (torch.rand(500, 4) - 0.5) * 30.0
     derivs = model.compute_derivatives(x_test)
@@ -129,10 +115,7 @@ def test_analytic_first_derivatives_vs_autograd():
     """Verify analytic first derivatives S_all against PyTorch autograd."""
     torch.manual_seed(99)
     model = MonotonicKANMap(num_features=4, target_index=2, hidden_dim=3, grid_size=6)
-    with torch.no_grad():
-        model.inner_cond_weights.normal_(0, 0.5)
-        model.inner_target_delta.normal_(0, 1.0)
-        model.outer_delta.normal_(0, 1.0)
+    model.randomize_parameters_(std=0.5, delta_std=1.0)
 
     x = torch.randn(20, 4, requires_grad=True)
     out = model(x)
@@ -147,10 +130,7 @@ def test_analytic_first_derivatives_vs_finite_differences():
     """Verify analytic derivatives against numerical central finite differences in double precision."""
     torch.manual_seed(88)
     model = MonotonicKANMap(num_features=3, target_index=0, hidden_dim=2, grid_size=6).to(torch.float64)
-    with torch.no_grad():
-        model.inner_cond_weights.normal_(0, 0.4)
-        model.inner_target_delta.normal_(0, 0.8)
-        model.outer_delta.normal_(0, 0.8)
+    model.randomize_parameters_(std=0.4, delta_std=0.8)
 
     x = torch.randn(15, 3, dtype=torch.float64)
     derivs = model.compute_derivatives(x)
@@ -173,10 +153,7 @@ def test_analytic_second_derivatives_vs_autograd():
     """Verify analytic 2nd derivatives S_jk and S_kk against autograd."""
     torch.manual_seed(77)
     model = MonotonicKANMap(num_features=4, target_index=1, hidden_dim=3, grid_size=6)
-    with torch.no_grad():
-        model.inner_cond_weights.normal_(0, 0.5)
-        model.inner_target_delta.normal_(0, 1.0)
-        model.outer_delta.normal_(0, 1.0)
+    model.randomize_parameters_(std=0.5, delta_std=1.0)
 
     x = torch.randn(15, 4, requires_grad=True)
     out = model(x)
@@ -202,10 +179,7 @@ def test_analytic_precision_integrand_vs_autograd_and_torch_func():
     """
     torch.manual_seed(66)
     model = MonotonicKANMap(num_features=4, target_index=1, hidden_dim=3, grid_size=6)
-    with torch.no_grad():
-        model.inner_cond_weights.normal_(0, 0.3)
-        model.inner_target_delta.normal_(0, 0.8)
-        model.outer_delta.normal_(0, 0.8)
+    model.randomize_parameters_(std=0.3, delta_std=0.8)
 
     x = torch.randn(10, 4, requires_grad=True)
     derivs = model.compute_derivatives(x)
@@ -261,14 +235,7 @@ def test_scale_modulated_monotonicity_and_derivatives():
     target_k = 2
     model = ScaleModulatedKANMap(d, target_index=target_k, hidden_dim=3, grid_size=6).to(torch.float64)
 
-    with torch.no_grad():
-        model.inner_cond_weights.normal_(0, 0.4)
-        model.inner_target_delta.normal_(0, 0.8)
-        model.outer_delta.normal_(0, 0.8)
-        model.scale_weights.normal_(0, 0.5)
-        model.scale_bias.normal_(0, 0.2)
-        model.offset_weights.normal_(0, 0.3)
-        model.offset_bias.normal_(0, 0.1)
+    model.randomize_parameters_(std=0.4, delta_std=0.8)
 
     x = torch.randn(15, d, dtype=torch.float64, requires_grad=True)
 
@@ -314,13 +281,11 @@ def test_scale_modulated_tanh_saturation_regime():
 
     with torch.no_grad():
         # Initialize weights with very large values to push sigma deep into saturation
-        model.inner_cond_weights.normal_(0, 0.5)
-        model.inner_target_delta.normal_(0, 1.0)
-        model.outer_delta.normal_(0, 1.0)
-        model.scale_weights.uniform_(5.0, 15.0)  # Large scale weights
-        model.scale_bias.fill_(8.0)              # Large bias ensuring saturation
-        model.offset_weights.normal_(0, 0.5)
-        model.offset_bias.normal_(0, 0.2)
+        model.randomize_parameters_(std=0.5, delta_std=1.0)
+        for layer in model.scale_net.layers:
+            layer.unconstrained_weights.uniform_(5.0, 15.0)
+            if layer.bias is not None:
+                layer.bias.fill_(8.0)
 
     x = torch.randn(20, d, dtype=torch.float64, requires_grad=True)
 
@@ -411,3 +376,210 @@ def test_sm_kan_mixed_additive_and_multiplicative_routing():
         idx_0 = others.index(0)
         assert psi_vals[:, idx_2].std().item() > 2.0 * psi_vals[:, idx_0].std().item()
         assert rho_vals[:, idx_4].std().item() > 3.0 * rho_vals[:, idx_0].std().item()
+
+
+def test_deep_monotonic_kan_core_arbitrary_depth_derivatives():
+    """
+    Verify exact programmatic Einstein summation derivative recurrence across
+    arbitrary depths:
+        - 3-layer KAN: [4 -> 6 -> 4 -> 1]
+        - 4-layer KAN: [3 -> 5 -> 4 -> 3 -> 1]
+    against float64 autograd.
+    """
+    torch.manual_seed(101)
+    d = 4
+    k = 1
+    model_3layer = MonotonicKANMap(
+        num_features=d,
+        target_index=k,
+        layers_hidden=[d, 6, 4, 1],
+        grid_size=6,
+        conditioning_scale=False,
+    ).to(torch.float64)
+
+    model_3layer.randomize_parameters_(std=0.4, delta_std=0.5)
+
+    x = torch.randn(10, d, dtype=torch.float64, requires_grad=True)
+    derivs = model_3layer.compute_derivatives(x)
+    out = derivs["out"]
+    S_k = derivs["S_k"].squeeze(-1)
+    S_all = derivs["S_all"]
+    S_jk = derivs["S_jk"]
+    S_kk = derivs["S_kk"].squeeze(-1)
+    S_jkk = derivs["S_jkk"]
+
+    assert torch.all(S_k > 0), "3-layer KAN target derivative must be strictly positive"
+
+    g1 = torch.autograd.grad(out.sum(), x, create_graph=True)[0]
+    g2 = torch.autograd.grad(g1[:, k].sum(), x, create_graph=True)[0]
+    g3 = torch.autograd.grad(g2[:, k].sum(), x)[0]
+
+    assert torch.allclose(S_all, g1, atol=1e-12), "3-layer analytic S_all mismatch with autograd"
+    assert torch.allclose(S_jk, g2, atol=1e-12), "3-layer analytic S_jk mismatch with autograd"
+    assert torch.allclose(S_kk, g2[:, k], atol=1e-12), "3-layer analytic S_kk mismatch with autograd"
+    assert torch.allclose(S_jkk, g3, atol=1e-12), "3-layer analytic S_jkk mismatch with autograd"
+
+    # 4-layer architecture
+    d4 = 3
+    k4 = 0
+    model_4layer = MonotonicKANMap(
+        num_features=d4,
+        target_index=k4,
+        layers_hidden=[d4, 5, 4, 3, 1],
+        grid_size=6,
+        conditioning_scale=False,
+    ).to(torch.float64)
+
+    model_4layer.randomize_parameters_(std=0.3, delta_std=0.4)
+
+    x4 = torch.randn(8, d4, dtype=torch.float64, requires_grad=True)
+    derivs4 = model_4layer.compute_derivatives(x4)
+
+    assert torch.all(derivs4["S_k"] > 0), "4-layer KAN target derivative must be strictly positive"
+
+    g1_4 = torch.autograd.grad(derivs4["out"].sum(), x4, create_graph=True)[0]
+    g2_4 = torch.autograd.grad(g1_4[:, k4].sum(), x4, create_graph=True)[0]
+    g3_4 = torch.autograd.grad(g2_4[:, k4].sum(), x4)[0]
+
+    assert torch.allclose(derivs4["S_all"], g1_4, atol=1e-12), "4-layer analytic S_all mismatch"
+    assert torch.allclose(derivs4["S_jk"], g2_4, atol=1e-12), "4-layer analytic S_jk mismatch"
+    assert torch.allclose(derivs4["S_jkk"], g3_4, atol=1e-12), "4-layer analytic S_jkk mismatch"
+
+
+def test_deep_scale_modulated_kan_arbitrary_depth():
+    """
+    Verify complete deep Scale-Modulated KAN (SM-KAN) architecture with:
+        - Deep Monotonic Core: [4 -> 6 -> 4 -> 1]
+        - Deep Scale Network:  [3 -> 5 -> 1]
+        - Deep Offset Network: [3 -> 4 -> 1]
+    against PyTorch float64 autograd for all derivatives and the generalized precision integrand.
+    """
+    torch.manual_seed(202)
+    d = 4
+    k = 1
+    others = [0, 2, 3]
+
+    model = ScaleModulatedKANMap(
+        num_features=d,
+        target_index=k,
+        layers_hidden=[d, 6, 4, 1],
+        scale_layers=[len(others), 5, 1],
+        offset_layers=[len(others), 4, 1],
+        grid_size=6,
+        scale_bound=4.0,
+    ).to(torch.float64)
+
+    model.randomize_parameters_(std=0.3, delta_std=0.5)
+
+    x = torch.randn(8, d, dtype=torch.float64, requires_grad=True)
+    derivs = model.compute_derivatives(x)
+    out = derivs["out"]
+    S_k = derivs["S_k"].squeeze(-1)
+    S_all = derivs["S_all"]
+    S_jk = derivs["S_jk"]
+    S_kk = derivs["S_kk"].squeeze(-1)
+    S_jkk = derivs["S_jkk"]
+
+    assert torch.all(S_k > 0), "Deep SM-KAN target derivative must be strictly positive"
+
+    g1 = torch.autograd.grad(out.sum(), x, create_graph=True)[0]
+    g2 = torch.autograd.grad(g1[:, k].sum(), x, create_graph=True)[0]
+    g3 = torch.autograd.grad(g2[:, k].sum(), x)[0]
+
+    assert torch.allclose(S_all, g1, atol=1e-12), "Deep SM-KAN S_all mismatch"
+    assert torch.allclose(S_jk, g2, atol=1e-12), "Deep SM-KAN S_jk mismatch"
+    assert torch.allclose(S_kk, g2[:, k], atol=1e-12), "Deep SM-KAN S_kk mismatch"
+    assert torch.allclose(S_jkk, g3, atol=1e-12), "Deep SM-KAN S_jkk mismatch"
+
+    # Precision row verification via torch.func vmap
+    row_analytic = model.compute_precision_row(x.detach())
+    row_torch_func = model.compute_precision_row_torch_func(x.detach())
+    assert np.allclose(row_analytic, row_torch_func, atol=1e-4), "Deep SM-KAN precision row mismatch"
+
+    # Verify optimizer step and loss calculation
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    total_loss, nll, reg = model.compute_loss(x.detach(), reg_value=0.01)
+    assert torch.isfinite(total_loss), "Deep SM-KAN loss must be finite"
+    total_loss.backward()
+    optimizer.step()
+
+
+def test_softplus_reparameterization_monotonicity_bounds():
+    """
+    Verify exact compliance with Section 6.1 (Equations 615, 620, 627) of monotonic_kan_transport.tex:
+        c_{m+1} = c_m + softplus(theta_m) + delta_mono
+        c_m = c_1 + sum_{r=1}^{m-1} (softplus(theta_r) + delta_mono)
+        c_{m+1} - c_m >= delta_mono > 0
+    """
+    delta_floor = 1e-3
+    model = MonotonicKANMap(
+        num_features=3,
+        target_index=0,
+        hidden_dim=4,
+        delta_mono=delta_floor,
+    )
+
+    with torch.no_grad():
+        for layer in model.core_layers:
+            if layer.has_monotonic:
+                layer.delta.fill_(-50.0)
+
+    # 1. Inner target coefficients increment check
+    c_inner = model.get_inner_target_coeffs()
+    diffs_inner = c_inner[:, 1:] - c_inner[:, :-1]
+    assert torch.all(diffs_inner >= delta_floor - 1e-6), "Inner increments must be bounded below by delta_mono"
+
+    # 2. Outer coefficients increment check
+    c_outer = model.get_outer_coeffs()
+    diffs_outer = c_outer[:, 1:] - c_outer[:, :-1]
+    assert torch.all(diffs_outer >= delta_floor - 1e-6), "Outer increments must be bounded below by delta_mono"
+
+    # 3. Global positivity on extreme tail evaluations
+    x_extreme = torch.tensor([[-100.0, 0.0, 0.0], [0.0, 0.0, 0.0], [100.0, 0.0, 0.0]])
+    derivs = model.compute_derivatives(x_extreme)
+    S_k = derivs["S_k"].squeeze()
+    assert torch.all(S_k > 0), "Target derivative must remain strictly positive in extreme tails"
+
+
+def test_forced_active_backbone_path_tracking():
+    """
+    Verify compliance with Definition 5.1 and Theorem 5.2 of monotonic_kan_transport.tex:
+    Strict target monotonicity must be certified by an explicit active backbone path P^*:
+        partial_k S^k(x) >= D_{P^*}(x) = prod_{l=1}^L phi'_{l, i_l^*, i_{l-1}^*}(x^{(l-1)}_{i_{l-1}^*}) >= epsilon > 0.
+    """
+    torch.manual_seed(333)
+    d = 4
+    k = 1
+    x = torch.randn(25, d)
+
+    # 1. Standard 2-layer default active path (k, 0, 0)
+    m2 = MonotonicKANMap(num_features=d, target_index=k, hidden_dim=4)
+    assert m2.active_path == (k, 0, 0), "Default 2-layer active path must be (k, 0, 0)"
+    v2 = m2.verify_backbone_monotonicity(x)
+    assert v2["is_strictly_monotonic"], "2-layer model must satisfy backbone monotonicity"
+    assert v2["backbone_min"] > 0.0
+
+    # 2. Custom active path (k, 3, 0)
+    m2_custom = MonotonicKANMap(num_features=d, target_index=k, hidden_dim=4, active_path=[k, 3, 0])
+    assert m2_custom.active_path == (k, 3, 0)
+    v2_custom = m2_custom.verify_backbone_monotonicity(x)
+    assert v2_custom["is_strictly_monotonic"]
+
+    # 3. Deep 3-layer active path (k, 0, 0, 0)
+    m3 = MonotonicKANMap(num_features=d, target_index=k, layers_hidden=[d, 6, 4, 1])
+    assert m3.active_path == (k, 0, 0, 0)
+    m3.randomize_parameters_(std=0.5, delta_std=0.8)
+    v3 = m3.verify_backbone_monotonicity(x)
+    assert v3["is_strictly_monotonic"], "3-layer model must satisfy backbone monotonicity"
+    assert v3["S_k_min"] >= v3["backbone_min"] > 0.0
+
+    # 4. Deep SM-KAN active path with scale modulation
+    m_sm = ScaleModulatedKANMap(
+        num_features=d,
+        target_index=k,
+        layers_hidden=[d, 6, 4, 1],
+        scale_layers=[3, 4, 1],
+    )
+    v_sm = m_sm.verify_backbone_monotonicity(x)
+    assert v_sm["is_strictly_monotonic"], "Deep SM-KAN must satisfy backbone monotonicity"
+    assert v_sm["backbone_min"] > 0.0
