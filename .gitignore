@@ -79,3 +79,6 @@ dmypy.json
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+
+# Recomputed notebook benchmark data, logs and plots
+results/kan_benchmarks/notebook_runs/

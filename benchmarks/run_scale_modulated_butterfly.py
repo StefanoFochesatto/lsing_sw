@@ -7,6 +7,7 @@ on the 10-Dimensional Butterfly Distribution.
 import sys
 import time
 import json
+import argparse
 import numpy as np
 import torch
 from pathlib import Path
@@ -59,14 +60,20 @@ def compute_graph_metrics(precision_matrix, true_adj, thresholds=(0.3, 0.2, 0.1,
 
 
 def main():
+    parser = argparse.ArgumentParser(description="SM-KAN Butterfly benchmark")
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--quick", action="store_true", help="1000 training and 200 evaluation samples, 5 epochs")
+    args = parser.parse_args()
+    if args.device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but unavailable")
     torch.manual_seed(42)
     np.random.seed(42)
 
-    output_dir = REPO_ROOT / "results/kan_benchmarks"
+    output_dir = REPO_ROOT / "results/kan_benchmarks" / ("quick" if args.quick else "")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 80)
-    print("SCALE-MODULATED MONOTONIC KAN BUTTERFLY BENCHMARK (d=10)")
+    print(f"SCALE-MODULATED KAN BUTTERFLY [device={args.device}, quick={args.quick}]")
     print("=" * 80)
 
     full_trn = torch.tensor(np.loadtxt(REPO_ROOT / "data/butterfly/bf_trn_5000_10d.txt", delimiter=","), dtype=torch.float32)
@@ -75,9 +82,11 @@ def main():
 
     d = 10
     true_adj = get_butterfly_ground_truth(d)
-    sample_sizes = [1000, 5000]
-    regs = [0.01, 0.005]
-    max_epochs = 35
+    sample_sizes = [1000] if args.quick else [1000, 5000]
+    regs = [0.01] if args.quick else [0.01, 0.005]
+    max_epochs = 5 if args.quick else 35
+    if args.quick:
+        val_data, tst_data = val_data[:200], tst_data[:200]
 
     results = {}
 
@@ -88,8 +97,8 @@ def main():
 
         # 1. Scale-Modulated Monotonic KAN
         print(f"  Training ScaleModulatedKANMap (M={M})...")
-        base_map_sm = [ScaleModulatedKANMap(d, target_index=k, hidden_dim=4, grid_size=8) for k in range(d)]
-        trainer_sm = KANTrainer(base_map_sm, d, hidden_dim=4, grid_size=8, max_epochs=max_epochs)
+        base_map_sm = [ScaleModulatedKANMap(d, target_index=k, hidden_dim=4, grid_size=8, dev=args.device) for k in range(d)]
+        trainer_sm = KANTrainer(base_map_sm, d, hidden_dim=4, grid_size=8, max_epochs=max_epochs, dev=args.device)
         t0 = time.perf_counter()
         sm_models = []
         for k in range(d):
@@ -99,7 +108,7 @@ def main():
         sm_train_time = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        comp_sm = KANPrecisionComputer(sm_models, tst_data, d)
+        comp_sm = KANPrecisionComputer(sm_models, tst_data.to(args.device), d)
         sm_prec = comp_sm.make_symmetric(comp_sm.compute())
         sm_eval_time = time.perf_counter() - t0
         sm_metrics = compute_graph_metrics(sm_prec, true_adj)
