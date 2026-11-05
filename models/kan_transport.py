@@ -200,6 +200,7 @@ class MonotonicKANMap(nn.Module):
         spline_order=3,
         penalty_type="functional",
         conditioning_scale=False,
+        scale_bound=4.0,
         dev="cpu",
     ):
         """
@@ -212,6 +213,7 @@ class MonotonicKANMap(nn.Module):
             spline_order (int): Spline degree p (default 3 for cubic splines).
             penalty_type (str): Regularization penalty: 'functional', 'coeff_group', or 'target_jacobian'.
             conditioning_scale (bool): Whether to enable scale modulation exp(sigma(x_{-k})) * S_core + alpha.
+            scale_bound (float): Saturation bound for smooth tanh scale modulation: sigma = scale_bound * tanh(sigma_raw / scale_bound).
             dev (str): Target PyTorch device.
         """
         super(MonotonicKANMap, self).__init__()
@@ -223,8 +225,8 @@ class MonotonicKANMap(nn.Module):
         self.spline_order = spline_order
         self.penalty_type = penalty_type
         self.conditioning_scale = conditioning_scale
+        self.scale_bound = float(scale_bound)
         self.device = torch.device(dev)
-
         self.other_indices = [j for j in range(num_features) if j != target_index]
 
         # Register knot grids as persistent buffers
@@ -411,8 +413,8 @@ class MonotonicKANMap(nn.Module):
 
         if self.scale_weights is not None:
             b_val_cond = b_val[:, self.other_indices, :]
-            sigma = torch.einsum("bdm,dm->b", b_val_cond, self.scale_weights) + self.scale_bias
-            sigma = torch.clamp(sigma, -4.0, 4.0)
+            sigma_raw = torch.einsum("bdm,dm->b", b_val_cond, self.scale_weights) + self.scale_bias
+            sigma = self.scale_bound * torch.tanh(sigma_raw / self.scale_bound)
             E = torch.exp(sigma)
             offset = torch.einsum("bdm,dm->b", b_val_cond, self.offset_weights) + self.offset_bias
             out = E * out_core + offset
@@ -480,16 +482,19 @@ class MonotonicKANMap(nn.Module):
             b_val_cond = b_val[:, self.other_indices, :]
             b_d1_cond = b_d1[:, self.other_indices, :]
 
-            # sigma(x_{-k}) and E = exp(sigma)
-            sigma = torch.einsum("bdm,dm->b", b_val_cond, self.scale_weights) + self.scale_bias
-            sigma = torch.clamp(sigma, -4.0, 4.0)
+            # sigma(x_{-k}) and E = exp(sigma) via smooth tanh saturation
+            sigma_raw = torch.einsum("bdm,dm->b", b_val_cond, self.scale_weights) + self.scale_bias
+            tanh_val = torch.tanh(sigma_raw / self.scale_bound)
+            sigma = self.scale_bound * tanh_val
             E = torch.exp(sigma).unsqueeze(1)  # (B, 1)
 
             # sigma derivatives wrt x: shape (B, d)
-            sig_d1 = torch.einsum("bdm,dm->bd", b_d1_cond, self.scale_weights)
+            # By chain rule: d(sigma)/dx_j = (1 - tanh^2(sigma_raw / scale_bound)) * d(sigma_raw)/dx_j
+            sech2 = (1.0 - tanh_val**2).unsqueeze(1)
+            sig_d1_raw = torch.einsum("bdm,dm->bd", b_d1_cond, self.scale_weights)
+            sig_d1 = sech2 * sig_d1_raw
             sigma_all = torch.zeros(x.shape[0], self.num_features, device=x.device, dtype=x.dtype)
             sigma_all[:, self.other_indices] = sig_d1
-
             # alpha(x_{-k}) and alpha derivatives: shape (B, 1) and (B, d)
             offset = torch.einsum("bdm,dm->b", b_val_cond, self.offset_weights) + self.offset_bias
             alpha = offset.unsqueeze(1)

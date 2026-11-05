@@ -73,3 +73,9 @@ dmypy.json
 *.aux
 *.toc
 *.out
+
+# Local history and LaTeX build artifacts
+.history/
+*.fls
+*.fdb_latexmk
+*.synctex.gz

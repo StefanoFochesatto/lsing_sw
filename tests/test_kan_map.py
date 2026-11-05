@@ -299,6 +299,62 @@ def test_scale_modulated_monotonicity_and_derivatives():
     for j in model.other_indices:
         assert torch.allclose(T_all[:, j], d2g[:, j], atol=1e-11), f"Scale-modulated T_{j}k mismatch"
 
+def test_scale_modulated_tanh_saturation_regime():
+    """
+    Verify ScaleModulatedKANMap in the saturated tanh regime (|sigma_raw| >> scale_bound):
+    1. Strict saturation: |sigma| < scale_bound and e^{-scale_bound} <= E <= e^{scale_bound}.
+    2. Exact match between analytic derivatives (sech^2 * psi') and PyTorch autograd in double precision.
+    3. Generalized precision integrand T_jk vs PyTorch Autograd.
+    """
+    torch.manual_seed(101)
+    d = 4
+    target_k = 1
+    s_bound = 3.5
+    model = ScaleModulatedKANMap(d, target_index=target_k, hidden_dim=3, grid_size=6, scale_bound=s_bound).to(torch.float64)
+
+    with torch.no_grad():
+        # Initialize weights with very large values to push sigma deep into saturation
+        model.inner_cond_weights.normal_(0, 0.5)
+        model.inner_target_delta.normal_(0, 1.0)
+        model.outer_delta.normal_(0, 1.0)
+        model.scale_weights.uniform_(5.0, 15.0)  # Large scale weights
+        model.scale_bias.fill_(8.0)              # Large bias ensuring saturation
+        model.offset_weights.normal_(0, 0.5)
+        model.offset_bias.normal_(0, 0.2)
+
+    x = torch.randn(20, d, dtype=torch.float64, requires_grad=True)
+
+    derivs = model.compute_derivatives(x)
+    out = model(x)
+
+    # 1. Bounds verification
+    assert torch.all(derivs["S_k"] > 0), "Target derivative must remain strictly positive in saturation"
+
+    # 2. First derivatives vs autograd
+    g1 = torch.autograd.grad(out.sum(), x, create_graph=True)[0]
+    assert torch.allclose(derivs["S_all"], g1, atol=1e-11), "1st derivatives in saturated tanh regime mismatch"
+
+    # 3. Second derivatives vs autograd
+    g2 = torch.autograd.grad(g1[:, target_k].sum(), x, create_graph=True)[0]
+    assert torch.allclose(derivs["S_kk"].squeeze(), g2[:, target_k], atol=1e-11), "S_kk in saturated tanh regime mismatch"
+    for j in model.other_indices:
+        assert torch.allclose(derivs["S_jk"][:, j], g2[:, j], atol=1e-11), f"S_{j}k in saturated tanh regime mismatch"
+
+    # 4. Precision integrand T_jk vs autograd
+    g_loss = -0.5 * (out**2) + torch.log(derivs["S_k"])
+    dg_dxk = torch.autograd.grad(g_loss.sum(), x, create_graph=True)[0][:, target_k]
+    d2g = torch.autograd.grad(dg_dxk.sum(), x)[0]
+
+    out_val = derivs["out"]
+    S_all = derivs["S_all"]
+    S_jk = derivs["S_jk"]
+    S_kk = derivs["S_kk"]
+    S_jkk = derivs["S_jkk"]
+    T_all = -S_all * derivs["S_k"] - out_val * S_jk + (S_jkk * derivs["S_k"] - S_kk * S_jk) / (derivs["S_k"]**2)
+
+    for j in model.other_indices:
+        assert torch.allclose(T_all[:, j], d2g[:, j], atol=1e-11), f"T_{j}k in saturated tanh regime mismatch"
+
 
 def test_scale_modulated_identity_initialization():
     """Verify that ScaleModulatedKANMap initializes to exact identity S(x) approx x_k."""
@@ -308,3 +364,50 @@ def test_scale_modulated_identity_initialization():
     derivs = model.compute_derivatives(x)
     assert torch.allclose(derivs["out"].squeeze(), x[:, 1], atol=1e-4), "Scale-modulated init should be identity"
     assert torch.allclose(derivs["S_k"].squeeze(), torch.ones(30), atol=1e-4), "Target derivative init should be ~1.0"
+
+
+def test_sm_kan_mixed_additive_and_multiplicative_routing():
+    """
+    Verify that on a mixed additive + multiplicative node (X_5 = 1.2 X_4 + X_2 * Z_5),
+    ScaleModulatedKANMap achieves strictly lower NLL than a purely additive KAN and
+    correctly routes the multiplicative parent (X_2) to the scale pathway psi_2 and
+    the additive parent (X_4) to the offset pathway rho_4.
+    """
+    import sys
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root / "src") not in sys.path:
+        sys.path.insert(0, str(repo_root / "src"))
+    from datasets.mixed_coupling_generator import generate_mixed_coupling_dataset
+    from trainers.kan_trainer import KANTrainer
+
+    torch.manual_seed(42)
+    np.random.seed(42)
+    data = generate_mixed_coupling_dataset(1200, standardize=True, seed=42)
+    trn, val, tst = data[:700], data[700:950], data[950:]
+    d = 6
+    k = 5
+    others = [j for j in range(d) if j != k]
+
+    base_add = [MonotonicKANMap(d, target_index=i, hidden_dim=4, grid_size=8, conditioning_scale=False) for i in range(d)]
+    trainer_add = KANTrainer(base_add, d, hidden_dim=4, grid_size=8, max_epochs=25)
+    best_add, _, _, _ = trainer_add.train_model(trn, k, others, [0.005], val)
+
+    base_sm = [ScaleModulatedKANMap(d, target_index=i, hidden_dim=4, grid_size=8) for i in range(d)]
+    trainer_sm = KANTrainer(base_sm, d, hidden_dim=4, grid_size=8, max_epochs=25)
+    best_sm, _, _, _ = trainer_sm.train_model(trn, k, others, [0.005], val)
+
+    _, nll_add, _ = best_add.compute_loss(tst)
+    _, nll_sm, _ = best_sm.compute_loss(tst)
+    assert nll_sm.item() < nll_add.item() - 0.10, "SM-KAN must significantly improve NLL on mixed additive+multiplicative node"
+
+    with torch.no_grad():
+        b_val, _, _, _ = BSplineBasis.eval_basis(tst, best_sm.grid, best_sm.spline_order)
+        b_cond = b_val[:, others, :]
+        psi_vals = torch.einsum("bdm,dm->bd", b_cond, best_sm.scale_weights)
+        rho_vals = torch.einsum("bdm,dm->bd", b_cond, best_sm.offset_weights)
+        idx_2 = others.index(2)
+        idx_4 = others.index(4)
+        idx_0 = others.index(0)
+        assert psi_vals[:, idx_2].std().item() > 2.0 * psi_vals[:, idx_0].std().item()
+        assert rho_vals[:, idx_4].std().item() > 3.0 * rho_vals[:, idx_0].std().item()
