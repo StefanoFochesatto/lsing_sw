@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .basis import BSplineBasis
+from .basis import BSplineBasis, BernsteinBasis
 
 
 class KANLayer(nn.Module):
@@ -11,7 +11,8 @@ class KANLayer(nn.Module):
         x^{(l)}_j = sum_{i=1}^{n_in} phi_{j, i}(x^{(l-1)}_i) + bias_j
 
     Where each univariate edge activation phi_{j, i}: R -> R is parameterized
-    by uniform B-splines with continuous linear tail extrapolation.
+    either by uniform B-splines (basis_type="bspline") or Bernstein polynomials
+    (basis_type="bernstein") with continuous linear tail extrapolation.
 
     Supports arbitrary input and output dimensions, and per-edge monotonic
     constraints via an optional `monotonic_mask` of shape (out_dim, in_dim).
@@ -30,19 +31,24 @@ class KANLayer(nn.Module):
         monotonic_mask: torch.Tensor | None = None,
         eps_mono: float = 1e-4,
         bias: bool = True,
+        basis_type: str = "bspline",
+        degree: int | None = None,
         dev: str | torch.device = "cpu",
     ):
         """
         Args:
             in_dim: Number of input neurons n_{l-1}.
             out_dim: Number of output neurons n_l.
-            grid_size: Number of intervals in B-spline knot grid.
+            grid_size: Number of intervals in B-spline knot grid (or default degree for Bernstein).
             grid_range: (grid_min, grid_max) for the standardized domain.
             spline_order: Spline degree (default 3 for cubic splines).
             monotonic_mask: Boolean tensor of shape (out_dim, in_dim).
                             True marks edges that must be monotonically increasing.
             eps_mono: Strict positive floor added to softplus increments.
             bias: Whether to include an additive bias per output neuron.
+            basis_type: Functional basis representation: 'bspline' or 'bernstein'.
+            degree: Polynomial degree p when using Bernstein polynomials. If None,
+                    defaults to spline_order if spline_order > 3 else grid_size.
             dev: Target PyTorch device.
         """
         super().__init__()
@@ -52,23 +58,44 @@ class KANLayer(nn.Module):
         self.grid_range = grid_range
         self.spline_order = spline_order
         self.eps_mono = eps_mono
+        self.basis_type = str(basis_type).lower()
         self.device = torch.device(dev)
 
-        # Build knot grid and Greville abscissae
-        grid = BSplineBasis.build_grid(
-            grid_min=grid_range[0],
-            grid_max=grid_range[1],
-            num_intervals=grid_size,
-            degree=spline_order,
-            device=self.device,
-        )
-        self.register_buffer("grid", grid)
-
-        self.n_bases = len(grid) - spline_order - 1
-        greville = BSplineBasis.get_greville_abscissae(grid, spline_order)
-        self.register_buffer("greville", greville)
-
-        self.step_h = (grid_range[1] - grid_range[0]) / float(grid_size)
+        if self.basis_type == "bernstein":
+            self.degree = (
+                degree
+                if degree is not None
+                else (spline_order if spline_order > 3 else grid_size)
+            )
+            grid = BernsteinBasis.build_grid(
+                grid_min=grid_range[0],
+                grid_max=grid_range[1],
+                degree=self.degree,
+                device=self.device,
+            )
+            self.register_buffer("grid", grid)
+            self.n_bases = self.degree + 1
+            greville = BernsteinBasis.get_greville_abscissae(grid, self.degree)
+            self.register_buffer("greville", greville)
+            self.step_h = (grid_range[1] - grid_range[0]) / float(self.degree)
+        elif self.basis_type == "bspline":
+            self.degree = spline_order
+            grid = BSplineBasis.build_grid(
+                grid_min=grid_range[0],
+                grid_max=grid_range[1],
+                num_intervals=grid_size,
+                degree=spline_order,
+                device=self.device,
+            )
+            self.register_buffer("grid", grid)
+            self.n_bases = len(grid) - spline_order - 1
+            greville = BSplineBasis.get_greville_abscissae(grid, spline_order)
+            self.register_buffer("greville", greville)
+            self.step_h = (grid_range[1] - grid_range[0]) / float(grid_size)
+        else:
+            raise ValueError(
+                f"Unsupported basis_type: {self.basis_type}. Expected 'bspline' or 'bernstein'."
+            )
 
         # Register monotonic edge mask
         if monotonic_mask is not None:
@@ -130,7 +157,11 @@ class KANLayer(nn.Module):
         Returns:
             out: Output tensor of shape (B, out_dim).
         """
-        b_val, _, _, _ = BSplineBasis.eval_basis(x, self.grid, self.spline_order)  # (B, in_dim, n_bases)
+        if self.basis_type == "bernstein":
+            b_val, _, _, _ = BernsteinBasis.eval_basis(x, self.grid, self.degree)
+        else:
+            b_val, _, _, _ = BSplineBasis.eval_basis(x, self.grid, self.spline_order)
+
         coeffs = self.get_coeffs()  # (out_dim, in_dim, n_bases)
         out = torch.einsum("bim,jim->bj", b_val, coeffs)
         if self.bias is not None:
@@ -152,7 +183,11 @@ class KANLayer(nn.Module):
             phi_pprime: Local 2nd derivatives phi''_{j, i}(x_i) of shape (B, out_dim, in_dim).
             phi_ppprime: Local 3rd derivatives phi'''_{j, i}(x_i) of shape (B, out_dim, in_dim).
         """
-        b_val, b_d1, b_d2, b_d3 = BSplineBasis.eval_basis(x, self.grid, self.spline_order)
+        if self.basis_type == "bernstein":
+            b_val, b_d1, b_d2, b_d3 = BernsteinBasis.eval_basis(x, self.grid, self.degree)
+        else:
+            b_val, b_d1, b_d2, b_d3 = BSplineBasis.eval_basis(x, self.grid, self.spline_order)
+
         coeffs = self.get_coeffs()
 
         out = torch.einsum("bim,jim->bj", b_val, coeffs)
@@ -168,7 +203,7 @@ class KANLayer(nn.Module):
     def initialize_identity(self, active_edge: tuple[int, int] | None = None):
         """
         Initializes the layer. If active_edge=(out_idx, in_idx) is specified:
-            phi_{out_idx, in_idx}(u) approx u (Marsden identity).
+            phi_{out_idx, in_idx}(u) approx u (Marsden / Bernstein identity).
         Other monotonic edges are initialized with a minimal non-decreasing floor.
         Unconstrained edges and bias are zeroed.
         """
@@ -209,19 +244,25 @@ class DeepKAN(nn.Module):
         grid_range: tuple[float, float] = (-4.0, 4.0),
         spline_order: int = 3,
         bias: bool = True,
+        basis_type: str = "bspline",
+        degree: int | None = None,
         dev: str | torch.device = "cpu",
     ):
         """
         Args:
             layers_hidden: Sequence of layer widths [n_0, n_1, ..., n_L].
-            grid_size: Number of intervals in B-spline grid.
+            grid_size: Number of intervals in B-spline grid (or Bernstein degree).
             grid_range: (grid_min, grid_max) for knot domain.
             spline_order: Spline degree (default 3).
             bias: Whether to include bias parameters in each layer.
+            basis_type: 'bspline' or 'bernstein'.
+            degree: Optional explicit polynomial degree for Bernstein basis.
             dev: PyTorch device.
         """
         super().__init__()
         self.layers_hidden = list(layers_hidden)
+        self.basis_type = basis_type
+        self.degree = degree
         self.device = torch.device(dev)
 
         self.layers = nn.ModuleList([
@@ -233,6 +274,8 @@ class DeepKAN(nn.Module):
                 spline_order=spline_order,
                 monotonic_mask=None,
                 bias=bias,
+                basis_type=basis_type,
+                degree=degree,
                 dev=self.device,
             )
             for l in range(len(self.layers_hidden) - 1)

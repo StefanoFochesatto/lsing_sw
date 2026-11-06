@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from .basis import BSplineBasis
+from .basis import BSplineBasis, BernsteinBasis
 from .layer import KANLayer, DeepKAN
 
 
@@ -42,6 +42,8 @@ class MonotonicKANMap(nn.Module):
         eps_mono: float = 1e-4,
         delta_mono: float | None = None,
         active_path: list[int] | tuple[int, ...] | None = None,
+        basis_type: str = "bspline",
+        degree: int | None = None,
         dev: str | torch.device = "cpu",
     ):
         """
@@ -106,21 +108,43 @@ class MonotonicKANMap(nn.Module):
                     f"active_path must have length {self.L + 1}, start with target_index ({self.target_index}), and end with 0. Got: {self.active_path}"
                 )
 
-        # Register knot grid and Greville abscissae buffers
-        grid = BSplineBasis.build_grid(
-            grid_min=grid_range[0],
-            grid_max=grid_range[1],
-            num_intervals=grid_size,
-            degree=spline_order,
-            device=self.device,
-        )
-        self.register_buffer("grid", grid)
-
-        self.n_bases = len(grid) - spline_order - 1
-        greville = BSplineBasis.get_greville_abscissae(grid, spline_order)
-        self.register_buffer("greville", greville)
-
-        self.step_h = (grid_range[1] - grid_range[0]) / float(grid_size)
+        # Register basis buffers and Greville abscissae
+        self.basis_type = str(basis_type).lower()
+        if self.basis_type == "bernstein":
+            self.degree = (
+                degree
+                if degree is not None
+                else (spline_order if spline_order > 3 else grid_size)
+            )
+            grid = BernsteinBasis.build_grid(
+                grid_min=grid_range[0],
+                grid_max=grid_range[1],
+                degree=self.degree,
+                device=self.device,
+            )
+            self.register_buffer("grid", grid)
+            self.n_bases = self.degree + 1
+            greville = BernsteinBasis.get_greville_abscissae(grid, self.degree)
+            self.register_buffer("greville", greville)
+            self.step_h = (grid_range[1] - grid_range[0]) / float(self.degree)
+        elif self.basis_type == "bspline":
+            self.degree = spline_order
+            grid = BSplineBasis.build_grid(
+                grid_min=grid_range[0],
+                grid_max=grid_range[1],
+                num_intervals=grid_size,
+                degree=spline_order,
+                device=self.device,
+            )
+            self.register_buffer("grid", grid)
+            self.n_bases = len(grid) - spline_order - 1
+            greville = BSplineBasis.get_greville_abscissae(grid, spline_order)
+            self.register_buffer("greville", greville)
+            self.step_h = (grid_range[1] - grid_range[0]) / float(grid_size)
+        else:
+            raise ValueError(
+                f"Unsupported basis_type: {self.basis_type}. Expected 'bspline' or 'bernstein'."
+            )
 
         # Conditioning projection matrix for out-of-place vmap scatter
         if self.d_cond > 0:
@@ -156,6 +180,8 @@ class MonotonicKANMap(nn.Module):
                     monotonic_mask=mask,
                     eps_mono=self.eps_mono,
                     bias=True,
+                    basis_type=self.basis_type,
+                    degree=self.degree,
                     dev=self.device,
                 )
             )
@@ -173,6 +199,8 @@ class MonotonicKANMap(nn.Module):
                 grid_size=grid_size,
                 grid_range=grid_range,
                 spline_order=spline_order,
+                basis_type=self.basis_type,
+                degree=self.degree,
                 dev=self.device,
             )
 
@@ -182,6 +210,8 @@ class MonotonicKANMap(nn.Module):
                 grid_size=grid_size,
                 grid_range=grid_range,
                 spline_order=spline_order,
+                basis_type=self.basis_type,
+                degree=self.degree,
                 dev=self.device,
             )
         else:
