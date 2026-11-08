@@ -347,3 +347,220 @@ class BernsteinBasis:
         b_d3 = torch.where(is_left | is_right, torch.zeros_like(b_d3), b_d3)
 
         return b_val, b_d1, b_d2, b_d3
+
+
+class IntegratedRBFBasis:
+    """
+    Evaluates Integrated Gaussian Radial Basis Functions (RBF) and their analytic
+    derivatives up to 3rd order.
+    """
+
+    @staticmethod
+    def build_grid(
+        grid_min: float = -4.0,
+        grid_max: float = 4.0,
+        num_intervals: int | None = None,
+        degree: int = 8,
+        device: str | torch.device = "cpu",
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
+        """
+        Builds RBF centers linearly spaced across [grid_min, grid_max].
+        """
+        K = degree if num_intervals is None else num_intervals
+        if K < 2:
+            raise ValueError(f"Integrated RBF requires at least 2 centers. Got: {K}")
+        return torch.linspace(grid_min, grid_max, K, device=device, dtype=dtype)
+
+    @staticmethod
+    def get_greville_abscissae(
+        grid: torch.Tensor,
+        degree: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Returns control node abscissae. Index 0 is 0.0 (carrier linear term),
+        and indices 1..K are the Gaussian centers.
+        """
+        zero = torch.zeros(1, device=grid.device, dtype=grid.dtype)
+        return torch.cat([zero, grid])
+
+    @staticmethod
+    def eval_basis(
+        x: torch.Tensor,
+        grid: torch.Tensor | tuple[float, float],
+        degree: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Evaluates Integrated Gaussian RBF basis functions and their first 3 derivatives.
+        The basis includes a linear term at index 0: psi_0(x) = x, psi'_0 = 1, psi''_0 = 0, psi'''_0 = 0.
+        Indices 1..K are integrated Gaussian RBFs:
+            psi_m(x) = sigma * sqrt(pi / 2) * erf((x - mu_m) / (sqrt(2) * sigma)).
+        """
+        if isinstance(grid, (tuple, list)):
+            a, b = float(grid[0]), float(grid[1])
+            K = 8 if degree is None else degree
+            mus = torch.linspace(a, b, K, dtype=x.dtype, device=x.device)
+        else:
+            mus = grid.to(dtype=x.dtype, device=x.device)
+            a, b = float(mus[0].item()), float(mus[-1].item())
+            K = len(mus)
+
+        sigma = float((b - a) / max(K - 1, 1))
+        c_erf = sigma * math.sqrt(math.pi / 2.0)
+
+        diff = x.unsqueeze(-1) - mus
+        z = diff / (math.sqrt(2.0) * sigma)
+
+        psi_rbf = c_erf * torch.erf(z)
+        g_rbf = torch.exp(-(diff ** 2) / (2.0 * (sigma ** 2)))
+        d2_rbf = -(diff / (sigma ** 2)) * g_rbf
+        d3_rbf = ((diff ** 2 - sigma ** 2) / (sigma ** 4)) * g_rbf
+
+        x_in = x.unsqueeze(-1)
+        ones = torch.ones_like(x_in)
+        zeros = torch.zeros_like(x_in)
+
+        b_val = torch.cat([x_in, psi_rbf], dim=-1)
+        b_d1 = torch.cat([ones, g_rbf], dim=-1)
+        b_d2 = torch.cat([zeros, d2_rbf], dim=-1)
+        b_d3 = torch.cat([zeros, d3_rbf], dim=-1)
+
+        return b_val, b_d1, b_d2, b_d3
+
+
+class SOSChebyshevBasis:
+    """
+    Evaluates Sum-of-Squares (SOS) Chebyshev polynomial basis functions and their
+    closed-form integrals and derivatives up to 3rd order.
+    """
+
+    _CACHE: dict = {}
+
+    @classmethod
+    def _get_precomputed(cls, degree: int, domain: tuple[float, float], dtype: torch.dtype, device: torch.device):
+        key = (degree, float(domain[0]), float(domain[1]), dtype, str(device))
+        if key not in cls._CACHE:
+            K = max(1, degree // 2)
+            N = 2 * K
+            a, b = domain
+            scale = float((b - a) / 2.0)
+            mid = float((a + b) / 2.0)
+
+            # Contraction tensor S of shape (N+1, K+1, K+1)
+            S = torch.zeros(N + 1, K + 1, K + 1, dtype=dtype, device=device)
+            for j in range(K + 1):
+                for k in range(K + 1):
+                    n1 = j + k
+                    n2 = abs(j - k)
+                    S[n1, j, k] += 0.5
+                    S[n2, j, k] += 0.5
+
+            # Constant offsets for Psi_n so Psi_n(0) = 0
+            consts = torch.zeros(N + 1, dtype=dtype, device=device)
+            for n in range(2, N + 1):
+                consts[n] = 0.5 * (math.cos((n + 1) * math.pi / 2.0) / (n + 1) - math.cos((n - 1) * math.pi / 2.0) / (n - 1))
+
+            cls._CACHE[key] = (K, N, scale, mid, S, consts)
+        return cls._CACHE[key]
+
+    @staticmethod
+    def build_grid(
+        grid_min: float = -4.0,
+        grid_max: float = 4.0,
+        num_intervals: int | None = None,
+        degree: int = 6,
+        device: str | torch.device = "cpu",
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
+        """
+        Builds Chebyshev-Lobatto nodes mapped to [grid_min, grid_max].
+        """
+        deg = degree if num_intervals is None else num_intervals
+        K = max(1, deg // 2)
+        N = 2 * K
+        mid = (grid_min + grid_max) / 2.0
+        scale = (grid_max - grid_min) / 2.0
+        i = torch.arange(N + 1, device=device, dtype=dtype)
+        u_nodes = torch.cos(i * math.pi / float(N))
+        return mid + scale * u_nodes
+
+    @staticmethod
+    def get_greville_abscissae(grid: torch.Tensor, degree: int | None = None) -> torch.Tensor:
+        return grid.clone()
+
+    @classmethod
+    def eval_basis(
+        cls,
+        x: torch.Tensor,
+        grid: torch.Tensor | tuple[float, float],
+        degree: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if isinstance(grid, (tuple, list)):
+            a, b = float(grid[0]), float(grid[1])
+            deg = 6 if degree is None else degree
+        else:
+            a, b = float(grid.min().item()), float(grid.max().item())
+            deg = (len(grid) - 1) if degree is None else degree
+
+        dtype = x.dtype
+        device = x.device
+        K, N, scale, mid, S, consts = cls._get_precomputed(deg, (a, b), dtype, device)
+
+        u = (x - mid) / scale
+        u_clamped = torch.clamp(u, -1.0, 1.0)
+
+        T = [torch.ones_like(u_clamped), u_clamped]
+        dT = [torch.zeros_like(u_clamped), torch.ones_like(u_clamped)]
+        d2T = [torch.zeros_like(u_clamped), torch.zeros_like(u_clamped)]
+        d3T = [torch.zeros_like(u_clamped), torch.zeros_like(u_clamped)]
+        for n in range(1, N + 1):
+            T.append(2 * u_clamped * T[n] - T[n - 1])
+            dT.append(2 * T[n] + 2 * u_clamped * dT[n] - dT[n - 1])
+            d2T.append(4 * dT[n] + 2 * u_clamped * d2T[n] - d2T[n - 1])
+            d3T.append(6 * d2T[n] + 2 * u_clamped * d3T[n] - d3T[n - 1])
+
+        Psi = [u_clamped, 0.25 * T[2] - 0.25]
+        for n in range(2, N + 1):
+            Psi.append(0.5 * (T[n + 1] / (n + 1) - T[n - 1] / (n - 1)) - consts[n])
+
+        b_val_int = torch.stack(Psi[:N + 1], dim=-1) * scale
+        b_d1_int = torch.stack(T[:N + 1], dim=-1)
+        b_d2_int = torch.stack(dT[:N + 1], dim=-1) / scale
+        b_d3_int = torch.stack(d2T[:N + 1], dim=-1) / (scale ** 2)
+
+        # Boundary anchors for extrapolation
+        is_left = (x <= a).unsqueeze(-1)
+        is_right = (x >= b).unsqueeze(-1)
+        dx_left = (x - a).unsqueeze(-1)
+        dx_right = (x - b).unsqueeze(-1)
+
+        u_l = torch.tensor(-1.0, dtype=dtype, device=device)
+        u_r = torch.tensor(1.0, dtype=dtype, device=device)
+
+        T_l = [torch.ones_like(u_l), u_l]
+        T_r = [torch.ones_like(u_r), u_r]
+        for n in range(1, N + 1):
+            T_l.append(2 * u_l * T_l[n] - T_l[n - 1])
+            T_r.append(2 * u_r * T_r[n] - T_r[n - 1])
+
+        Psi_l = [u_l, 0.25 * T_l[2] - 0.25]
+        Psi_r = [u_r, 0.25 * T_r[2] - 0.25]
+        for n in range(2, N + 1):
+            Psi_l.append(0.5 * (T_l[n + 1] / (n + 1) - T_l[n - 1] / (n - 1)) - consts[n])
+            Psi_r.append(0.5 * (T_r[n + 1] / (n + 1) - T_r[n - 1] / (n - 1)) - consts[n])
+
+        b_min = torch.stack(Psi_l[:N + 1]) * scale
+        b_max = torch.stack(Psi_r[:N + 1]) * scale
+        db_min = torch.stack(T_l[:N + 1])
+        db_max = torch.stack(T_r[:N + 1])
+
+        b_val = torch.where(
+            is_left,
+            b_min + db_min * dx_left,
+            torch.where(is_right, b_max + db_max * dx_right, b_val_int),
+        )
+        b_d1 = torch.where(is_left, db_min, torch.where(is_right, db_max, b_d1_int))
+        b_d2 = torch.where(is_left | is_right, torch.zeros_like(b_d2_int), b_d2_int)
+        b_d3 = torch.where(is_left | is_right, torch.zeros_like(b_d3_int), b_d3_int)
+
+        return b_val, b_d1, b_d2, b_d3

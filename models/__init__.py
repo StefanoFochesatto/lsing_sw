@@ -2,6 +2,8 @@ from models.UMNN import UMNNMAFFlow, MADE, ParallelNeuralIntegral, NeuralIntegra
 from models.monotonic_kan import (
     BSplineBasis,
     BernsteinBasis,
+    IntegratedRBFBasis,
+    SOSChebyshevBasis,
     KANLayer,
     DeepKAN,
     MonotonicKANMap,
@@ -15,6 +17,8 @@ __all__ = [
     "NeuralIntegral",
     "BSplineBasis",
     "BernsteinBasis",
+    "IntegratedRBFBasis",
+    "SOSChebyshevBasis",
     "KANLayer",
     "DeepKAN",
     "MonotonicKANMap",

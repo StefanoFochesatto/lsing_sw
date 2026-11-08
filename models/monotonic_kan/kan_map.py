@@ -1,9 +1,10 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from .basis import BSplineBasis, BernsteinBasis
+from .basis import BSplineBasis, BernsteinBasis, IntegratedRBFBasis, SOSChebyshevBasis
 from .layer import KANLayer, DeepKAN
 
 
@@ -127,6 +128,38 @@ class MonotonicKANMap(nn.Module):
             greville = BernsteinBasis.get_greville_abscissae(grid, self.degree)
             self.register_buffer("greville", greville)
             self.step_h = (grid_range[1] - grid_range[0]) / float(self.degree)
+        elif self.basis_type in ["rbf", "integrated_rbf"]:
+            self.degree = degree if degree is not None else grid_size
+            grid = IntegratedRBFBasis.build_grid(
+                grid_min=grid_range[0],
+                grid_max=grid_range[1],
+                degree=self.degree,
+                device=self.device,
+            )
+            self.register_buffer("grid", grid)
+            self.n_bases = self.degree + 1
+            greville = IntegratedRBFBasis.get_greville_abscissae(grid, self.degree)
+            self.register_buffer("greville", greville)
+            self.step_h = (grid_range[1] - grid_range[0]) / float(self.degree)
+        elif self.basis_type in ["chebyshev", "sos_chebyshev"]:
+            self.degree = (
+                degree
+                if degree is not None
+                else (spline_order if spline_order > 3 else grid_size)
+            )
+            self.K = max(1, self.degree // 2)
+            self.N = 2 * self.K
+            self.n_bases = self.N + 1
+            grid = SOSChebyshevBasis.build_grid(
+                grid_min=grid_range[0],
+                grid_max=grid_range[1],
+                degree=self.degree,
+                device=self.device,
+            )
+            self.register_buffer("grid", grid)
+            greville = SOSChebyshevBasis.get_greville_abscissae(grid, self.degree)
+            self.register_buffer("greville", greville)
+            self.step_h = (grid_range[1] - grid_range[0]) / float(self.N)
         elif self.basis_type == "bspline":
             self.degree = spline_order
             grid = BSplineBasis.build_grid(
@@ -143,7 +176,7 @@ class MonotonicKANMap(nn.Module):
             self.step_h = (grid_range[1] - grid_range[0]) / float(grid_size)
         else:
             raise ValueError(
-                f"Unsupported basis_type: {self.basis_type}. Expected 'bspline' or 'bernstein'."
+                f"Unsupported basis_type: {self.basis_type}. Expected 'bspline', 'bernstein', 'rbf', or 'chebyshev'."
             )
 
         # Conditioning projection matrix for out-of-place vmap scatter
@@ -230,50 +263,125 @@ class MonotonicKANMap(nn.Module):
         """
         with torch.no_grad():
             n1 = self.layers_hidden[1]
-            step0 = self.step_h / float(n1)
-            init_delta0 = torch.log(
-                torch.expm1(torch.tensor(max(step0 - self.eps_mono, 1e-5)))
-            ).item()
-            init_delta_h = torch.log(
-                torch.expm1(torch.tensor(max(self.step_h - self.eps_mono, 1e-5)))
-            ).item()
+            if self.basis_type in ["rbf", "integrated_rbf"]:
+                # Layer 0: target feature distributed across n_1 hidden nodes
+                l0 = self.core_layers[0]
+                if l0.has_monotonic:
+                    l0.delta.fill_(-12.0)
+                    slope_n1 = max(1.0 / float(n1) - self.eps_mono, 1e-4)
+                    init_lin0 = math.log(math.expm1(slope_n1))
+                    l0.delta[:, self.target_index, 0].fill_(init_lin0)
+                    if l0.c0 is not None:
+                        l0.c0.fill_(0.0)
+                if l0.has_unconstrained:
+                    l0.unconstrained_weights.zero_()
+                if l0.bias is not None:
+                    l0.bias.zero_()
 
-            # Layer 0: target feature distributed across n_1 hidden nodes
-            l0 = self.core_layers[0]
-            if l0.has_monotonic:
-                l0.delta.fill_(-8.0)
-                l0.c0.fill_(0.0)
-                l0.delta[:, self.target_index].fill_(init_delta0)
-                l0.c0[:, self.target_index].fill_((self.greville[0] / float(n1)).item())
-            if l0.has_unconstrained:
-                l0.unconstrained_weights.zero_()
-            if l0.bias is not None:
-                l0.bias.zero_()
+                for l in range(1, self.L - 1):
+                    in_node = self.active_path[l]
+                    out_node = self.active_path[l + 1]
+                    layer = self.core_layers[l]
+                    if layer.has_monotonic:
+                        layer.delta.fill_(-12.0)
+                        init_lin = math.log(max(math.expm1(1.0 - self.eps_mono), 1e-4))
+                        layer.delta[out_node, in_node, 0].fill_(init_lin)
+                        if layer.c0 is not None:
+                            layer.c0.fill_(0.0)
+                    if layer.has_unconstrained:
+                        layer.unconstrained_weights.zero_()
+                    if layer.bias is not None:
+                        layer.bias.zero_()
 
-            # Intermediate hidden layers (if any, for depth L > 2)
-            for l in range(1, self.L - 1):
-                in_node = self.active_path[l]
-                out_node = self.active_path[l + 1]
-                layer = self.core_layers[l]
-                if layer.has_monotonic:
-                    layer.delta.fill_(-8.0)
-                    layer.c0.fill_(0.0)
-                    layer.delta[out_node, in_node].fill_(init_delta_h)
-                    layer.c0[out_node, in_node].fill_(self.greville[0].item())
-                if layer.has_unconstrained:
-                    layer.unconstrained_weights.zero_()
-                if layer.bias is not None:
-                    layer.bias.zero_()
+                l_last = self.core_layers[-1]
+                if l_last.has_monotonic:
+                    l_last.delta.fill_(-12.0)
+                    init_lin = math.log(max(math.expm1(1.0 - self.eps_mono), 1e-4))
+                    l_last.delta[:, :, 0].fill_(init_lin)
+                    if l_last.c0 is not None:
+                        l_last.c0.fill_(0.0)
+                if l_last.has_unconstrained:
+                    l_last.unconstrained_weights.zero_()
+                if l_last.bias is not None:
+                    l_last.bias.zero_()
 
-            # Output layer (L - 1): sums incoming activations
-            l_last = self.core_layers[-1]
-            if l_last.has_monotonic:
-                l_last.delta.fill_(init_delta_h)
-                l_last.c0.fill_(self.greville[0].item())
-            if l_last.has_unconstrained:
-                l_last.unconstrained_weights.zero_()
-            if l_last.bias is not None:
-                l_last.bias.zero_()
+            elif self.basis_type in ["chebyshev", "sos_chebyshev"]:
+                l0 = self.core_layers[0]
+                if l0.has_monotonic:
+                    l0.L_param.zero_()
+                    slope_n1 = max(1.0 / float(n1) - self.eps_mono, 1e-4)
+                    l0.L_param[:, self.target_index, 0, 0] = math.sqrt(slope_n1)
+                if l0.has_unconstrained:
+                    l0.unconstrained_weights.zero_()
+                if l0.bias is not None:
+                    l0.bias.zero_()
+
+                for l in range(1, self.L - 1):
+                    in_node = self.active_path[l]
+                    out_node = self.active_path[l + 1]
+                    layer = self.core_layers[l]
+                    if layer.has_monotonic:
+                        layer.L_param.zero_()
+                        layer.L_param[out_node, in_node, 0, 0] = math.sqrt(max(1.0 - self.eps_mono, 1e-4))
+                    if layer.has_unconstrained:
+                        layer.unconstrained_weights.zero_()
+                    if layer.bias is not None:
+                        layer.bias.zero_()
+
+                l_last = self.core_layers[-1]
+                if l_last.has_monotonic:
+                    l_last.L_param.zero_()
+                    l_last.L_param[:, :, 0, 0] = math.sqrt(max(1.0 - self.eps_mono, 1e-4))
+                if l_last.has_unconstrained:
+                    l_last.unconstrained_weights.zero_()
+                if l_last.bias is not None:
+                    l_last.bias.zero_()
+
+            else:
+                step0 = self.step_h / float(n1)
+                init_delta0 = torch.log(
+                    torch.expm1(torch.tensor(max(step0 - self.eps_mono, 1e-5)))
+                ).item()
+                init_delta_h = torch.log(
+                    torch.expm1(torch.tensor(max(self.step_h - self.eps_mono, 1e-5)))
+                ).item()
+
+                # Layer 0: target feature distributed across n_1 hidden nodes
+                l0 = self.core_layers[0]
+                if l0.has_monotonic:
+                    l0.delta.fill_(-12.0)
+                    l0.c0.fill_(0.0)
+                    l0.delta[:, self.target_index].fill_(init_delta0)
+                    l0.c0[:, self.target_index].fill_((self.greville[0] / float(n1)).item())
+                if l0.has_unconstrained:
+                    l0.unconstrained_weights.zero_()
+                if l0.bias is not None:
+                    l0.bias.zero_()
+
+                # Intermediate hidden layers (if any, for depth L > 2)
+                for l in range(1, self.L - 1):
+                    in_node = self.active_path[l]
+                    out_node = self.active_path[l + 1]
+                    layer = self.core_layers[l]
+                    if layer.has_monotonic:
+                        layer.delta.fill_(-12.0)
+                        layer.c0.fill_(0.0)
+                        layer.delta[out_node, in_node].fill_(init_delta_h)
+                        layer.c0[out_node, in_node].fill_(self.greville[0].item())
+                    if layer.has_unconstrained:
+                        layer.unconstrained_weights.zero_()
+                    if layer.bias is not None:
+                        layer.bias.zero_()
+
+                # Output layer (L - 1): sums incoming activations
+                l_last = self.core_layers[-1]
+                if l_last.has_monotonic:
+                    l_last.delta.fill_(init_delta_h)
+                    l_last.c0.fill_(self.greville[0].item())
+                if l_last.has_unconstrained:
+                    l_last.unconstrained_weights.zero_()
+                if l_last.bias is not None:
+                    l_last.bias.zero_()
 
             if self.scale_net is not None:
                 self.scale_net.initialize_zeros()
@@ -328,7 +436,16 @@ class MonotonicKANMap(nn.Module):
         with torch.no_grad():
             for layer in self.core_layers:
                 if layer.has_monotonic:
-                    layer.delta.normal_(0, delta_std)
+                    if layer.basis_type in ["chebyshev", "sos_chebyshev"]:
+                        layer.L_param.normal_(0, delta_std * 0.5)
+                    elif layer.basis_type in ["rbf", "integrated_rbf"]:
+                        layer.delta.normal_(0, delta_std)
+                        if layer.c0 is not None:
+                            layer.c0.normal_(0, std)
+                    else:
+                        layer.delta.normal_(0, delta_std)
+                        if layer.c0 is not None:
+                            layer.c0.normal_(0, std)
                 if layer.has_unconstrained:
                     layer.unconstrained_weights.normal_(0, std)
             if self.scale_net is not None:
