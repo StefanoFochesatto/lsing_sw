@@ -82,3 +82,5 @@ dmypy.json
 
 # Recomputed notebook benchmark data, logs and plots
 results/kan_benchmarks/notebook_runs/
+vscode-colab-gpu/node_modules/
+vscode-colab-gpu/dist/
