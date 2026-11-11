@@ -177,7 +177,8 @@
   "scripts": {
     "compile": "tsc -b",
     "watch": "tsc -b -w",
-    "bundle": "tsc -b"
+    "bundle": "tsc -b",
+    "install-extension": "tsc -b && mkdir -p ~/.vscode/extensions/stefano.colab-gpu-monitor-0.1.0 && cp -r package.json dist media README.md ~/.vscode/extensions/stefano.colab-gpu-monitor-0.1.0/"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
