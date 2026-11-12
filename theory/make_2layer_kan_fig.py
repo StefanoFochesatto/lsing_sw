@@ -511,7 +511,7 @@ def generate_2layer_kan_liu_style():
         y_box1,
         r"\textbf{Target Splines} $\phi_{1,q,k}$ ($l=1$)" + "\n"
         + r"Non-decreasing ($\phi'_{1,q,k} \ge 0$)" + "\n"
-        + r"\textbf{Active path} $q^*$: $\phi' \ge \epsilon_1 > 0$",
+        + r"\textbf{Active path} $\mathcal{P}^*$: $\phi'_{1,q^*,k} \ge \epsilon_1 > 0$",
         ha="center",
         va="center",
         linespacing=1.45,
@@ -554,7 +554,7 @@ def generate_2layer_kan_liu_style():
         y_box2,
         r"\textbf{Outer Splines} $\phi_{2,1,q}$ ($l=2$)" + "\n"
         + r"Non-decreasing ($\phi'_{2,1,q} \ge 0$)" + "\n"
-        + r"\textbf{Active path} $q^*$: $\phi' \ge \epsilon_2 > 0$",
+        + r"\textbf{Active path} $\mathcal{P}^*$: $\phi'_{2,1,q^*} \ge \epsilon_2 > 0$",
         ha="center",
         va="center",
         linespacing=1.45,

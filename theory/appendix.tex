@@ -1,0 +1,137 @@
+\appendix
+
+% -----------------------------------------------------------------------------
+\section{Location--Scale Decoupling and Mixed Couplings in SM-KAN}
+\label{app:sm_kan_location_scale}
+% -----------------------------------------------------------------------------
+
+In this appendix, we detail why the Scale-Modulated Monotonic KAN (Definition~\ref{def:sm_kan}),
+\begin{equation}
+    S^k(x) = \exp\big(\sigma(x_{-k})\big) \cdot S^k_{\text{core}}(x) + \alpha(x_{-k}),
+\end{equation}
+includes an explicit post-multiplication conditioning offset $\alpha(x_{-k}) = \sum_{j \neq k} \rho_j(x_j)$ in addition to the conditioning splines already present inside $S^k_{\text{core}}(x)$.
+
+\subsection{Heteroscedastic Location--Scale Butterfly Example}
+In the standard Butterfly distribution \eqref{eq:butterfly_def}, $X_2 = W \cdot X_1$ with $W \sim \mathcal{N}(0, 1)$ and $X_1 \perp W$, the conditional distribution $X_2 \mid (X_1 = x_1) \sim \mathcal{N}(0, x_1^2)$ is centered at zero ($\mathbb{E}[X_2 \mid X_1 = x_1] = 0$). Only its standard deviation $|x_1|$ varies with $x_1$, so normalizing $X_2$ to $\mathcal{N}(0, 1)$ requires pure rescaling by $1/|x_1|$ with $\alpha(x_1) = 0$.
+
+More generally, suppose $X_2$ exhibits both a conditional mean shift $\mu(X_1)$ and a multiplicative conditional scale,
+\begin{equation}
+    X_2 = \mu(X_1) + W \cdot X_1, \quad X_1 \sim \mathcal{N}(0, 1), \quad W \sim \mathcal{N}(0, 1), \quad X_1 \perp W.
+\end{equation}
+Conditioned on $X_1 = x_1 \neq 0$, we have $X_2 \mid (X_1 = x_1) \sim \mathcal{N}(\mu(x_1), x_1^2)$, and the exact Knothe--Rosenblatt transport map normalizing $X_2$ to $\mathcal{N}(0, 1)$ is an affine function of $x_2$,
+\begin{equation}
+    S^2(x_1, x_2) = \frac{x_2 - \mu(x_1)}{|x_1|} = \underbrace{\exp\big(-\log|x_1|\big)}_{\exp(\sigma(x_1))} \cdot \underbrace{x_2}_{S^2_{\text{core}}(x_1, x_2)} + \underbrace{\left(-\frac{\mu(x_1)}{|x_1|}\right)}_{\alpha(x_1)}.
+\end{equation}
+Here each component of SM-KAN fulfills a distinct role: $S^2_{\text{core}}(x_1, x_2) = x_2$ provides the strictly increasing dependence on the target coordinate $x_2$ ($\partial_2 S^2_{\text{core}} = 1 > 0$), $\exp(\sigma(x_1)) = 1/|x_1| > 0$ rescales the target slope to normalize the conditional variance, and $\alpha(x_1) = -\mu(x_1)/|x_1|$ shifts the intercept so that the transformed reference variable $Z_2 = S^2(X_1, X_2)$ has zero mean.
+
+\subsection{Why \texorpdfstring{$\alpha(x_{-k})$}{alpha(x\_\{-k\})} Is Placed Outside the Product}
+Although $S^k_{\text{core}}(x)$ already accepts $x_{-k}$ through its inner conditioning splines $\phi_{1, q, j}(x_j)$, placing the additive offset $\alpha(x_{-k}) = \sum_{j \neq k} \rho_j(x_j)$ outside the multiplication by $\exp(\sigma(x_{-k}))$ decouples additive location shifts from multiplicative scaling across multiple conditioning variables ($d > 2$). Every term inside $S^k_{\text{core}}(x)$ is multiplied by the full scale factor $\exp(\sigma(x_{-k})) = \prod_{j \neq k} \exp(\psi_j(x_j))$. If coordinate $x_1$ modulates the conditional variance of $X_3$ while coordinate $x_2$ only shifts the conditional mean of $X_3$, placing the shift from $x_2$ inside $S^3_{\text{core}}$ forces its contribution in $z_3$-space to be multiplied by $\exp(\psi_1(x_1))$. Including $\alpha(x_{-k}) = \sum_{j \neq k} \rho_j(x_j)$ outside the product allows each conditioning coordinate $x_j$ to contribute an unscaled additive location shift $\rho_j(x_j)$ directly to $S^k(x)$, independent of $\exp(\sigma(x_{-k}))$.
+
+Furthermore, separating $\alpha(x_{-k})$ from the product prevents large inverse scales from amplifying centering errors. In regions where the conditional variance is small (such as near $x_1 \approx 0$ in the Butterfly distribution), the inverse scale factor $\exp(\sigma(x_1)) \approx 1/|x_1|$ becomes large. If the conditional mean shift had to be represented entirely inside $S^k_{\text{core}}(x)$, any small approximation error in the offset $S^k_{\text{core}}(x_1, 0)$ would be magnified by $\exp(\sigma(x_1)) \gg 1$. Placing $\alpha(x_{-k})$ after the multiplication adjusts the center directly in the standardized $\mathcal{N}(0, 1)$ reference space without amplification by $\exp(\sigma(x_{-k}))$.
+
+\subsection{Unscaled Target Reduction and Simultaneous Additive--Multiplicative Couplings}
+A natural question regarding the SM-KAN parameterization \eqref{eq:sm_kan_def} is whether multiplying $S^k_{\text{core}}(x)$ by $\exp(\sigma(x_{-k}))$ forces the target coordinate $x_k$ to be multiplicatively coupled to every conditioning coordinate $x_j$ ($j \neq k$), even when the true dependency is purely additive or combines an additive parent with a multiplicative parent.
+
+Two algebraic properties ensure that $x_k$ is never spuriously scaled by purely additive conditioning coordinates. First, because $\sigma(x_{-k}) = \sum_{j \neq k} \psi_j(x_j)$ enters through the exponential map, the scale factor decomposes as a coordinate-wise product,
+\begin{equation}
+    \exp\big(\sigma(x_{-k})\big) = \prod_{j \neq k} \exp\big(\psi_j(x_j)\big).
+\end{equation}
+For any conditioning coordinate $x_j$ that does not modulate the conditional variance of $X_k$, setting $\psi_j(x_j) \equiv 0$ yields the multiplicative identity $\exp(\psi_j(x_j)) = \exp(0) \equiv 1$. In particular, when all relations on node $k$ are purely additive, $\sigma(x_{-k}) \equiv 0$ gives $\exp(\sigma(x_{-k})) \equiv 1$, reducing \eqref{eq:sm_kan_def} identically to the unscaled additive map $S^k(x) = S^k_{\text{core}}(x) + \alpha(x_{-k})$.
+
+Second, suppose a target variable $X_6$ depends simultaneously on an additive parent $X_5$ and a multiplicative parent $X_3$,
+\begin{equation}
+    X_6 = c X_5 + X_3 \cdot Z_6, \quad Z_6 \sim \mathcal{N}(0, 1), \quad Z_6 \perp (X_3, X_5).
+    \label{eq:mixed_node_dgp}
+\end{equation}
+Inverting \eqref{eq:mixed_node_dgp} to recover the independent Gaussian reference variable $Z_6 = S^6(x)$ yields,
+\begin{equation}
+    S^6(x) = \frac{x_6 - c x_5}{|x_3|} = \underbrace{\exp\big(-\log|x_3|\big)}_{\exp(\psi_3(x_3))} \cdot \big(\underbrace{x_6 - c x_5}_{S^6_{\text{core}}(x)}\big), \quad x_3 \neq 0.
+    \label{eq:mixed_node_exact_map}
+\end{equation}
+With $\psi_5(x_5) \equiv 0$ ($\exp(\psi_5(x_5)) \equiv 1$), the additive parent $x_5$ never multiplies $x_6$; instead, subtracting the conditional mean $c x_5$ and dividing the entire residual $(x_6 - c x_5)$ by $|x_3|$ reproduces the exact transport map \eqref{eq:mixed_node_exact_map}.
+
+\subsection{Six-Dimensional Mixed Coupling Benchmark}
+\label{subsec:mixed_coupling_graph}
+
+To verify this decoupling behavior empirically, we construct a 6-dimensional synthetic benchmark graph comprising three distinct coupling regimes simultaneously,
+\begin{align}
+    \text{Purely Additive Pair }(1, 2): &\quad X_1 = Z_1, \quad X_2 = 1.2\sin(X_1) + Z_2, \\
+    \text{Purely Multiplicative Pair }(3, 4): &\quad X_3 = Z_3, \quad X_4 = X_3 \cdot Z_4, \\
+    \text{Mixed Additive + Multiplicative }(3, 5, 6): &\quad X_5 = Z_5, \quad X_6 = 1.2 X_5 + X_3 \cdot Z_6,
+\end{align}
+where $Z_1, \dots, Z_6 \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0, 1)$. When evaluated on this benchmark, SM-KAN successfully recovers all four true graph edges ($(1, 2)$, $(3, 4)$, $(5, 6)$, and $(3, 6)$) while keeping spurious cross-couplings suppressed below threshold ($< 0.19$).
+
+Inspecting the empirical activations of the learned scale splines $\psi_j$ and offset splines $\rho_j$ confirms that SM-KAN dynamically decouples location shifts from scale modulation without supervision:
+\begin{enumerate}
+    \item On the additive node $X_2$, the scale spline $\psi_1$ remains flat ($\operatorname{std}(\psi_1) = 0.031$, so $\exp(\psi_1) \approx 1$), and the nonlinear mean shift $\sin(X_1)$ is routed entirely through the offset spline $\rho_1$ ($\operatorname{std}(\rho_1) = 0.137$).
+    \item On the multiplicative node $X_4$, the offset spline is inactive ($\operatorname{std}(\rho_3) = 0.014$), and the heteroscedastic scale is captured by the scale spline ($\operatorname{std}(\psi_3) = 0.165$).
+    \item On the mixed node $X_6$, SM-KAN selectively assigns the multiplicative parent $X_3$ to the scale spline ($\operatorname{std}(\psi_3) = 0.181$ vs.\ $\operatorname{std}(\rho_3) = 0.063$) and the additive parent $X_5$ to the offset spline ($\operatorname{std}(\rho_5) = 0.161$ vs.\ $\operatorname{std}(\psi_5) = 0.024$). This achieves superior test NLL ($-0.136$ for SM-KAN vs.\ $+0.107$ for purely additive KAN) and confirms that purely additive coordinates are never spuriously scaled.
+\end{enumerate}
+
+% -----------------------------------------------------------------------------
+\section{Universal Approximation in \texorpdfstring{$C^3$}{C3} and \texorpdfstring{$W^{3,\infty}$}{W\^{}\{3,infty\}} and Precision Matrix Consistency}
+\label{app:c3_universal_approximation}
+% -----------------------------------------------------------------------------
+
+Satisfying the admissibility criteria of Definition~\ref{def:admissibility_criteria} guarantees that a parameterized map $S^k(x)$ defines a valid conditional pushforward density with a well-defined generalized precision integrand $T_{jk}(x)$. To ensure that learning $S^k$ recovers the true conditional independence graph $G = (V, E)$, however, the monotonic B-spline parameterization must also be dense in the space of orientation-preserving target diffeomorphisms together with their derivatives up to third order. Mere $C^0$ or $C^1$ universal approximation is insufficient for L-SING, because $T_{jk}(x)$ in \eqref{eq:precision_integrand_expansion} depends explicitly on the second and third derivatives $\partial_k^2 S^k$, $\partial_j \partial_k S^k$, and $\partial_j \partial_k^2 S^k$.
+
+We now prove that univariate monotonic B-splines parameterized via the cumulative softplus increments \eqref{eq:softplus_reparam} universally approximate any strictly increasing $C^3$ diffeomorphism on a compact interval $[a, b]$: in the classical $C^3([a, b])$ norm when the spline degree satisfies $p \ge 4$, and in the Sobolev norm $C^2([a, b]) \cap W^{3,\infty}([a, b])$ (uniformly up to second order and piecewise uniformly at third order outside the finite knot grid) when $p = 3$.
+
+\begin{theorem}[Univariate $C^3$ and $W^{3,\infty}$ Universal Approximation of Monotonic B-Splines]
+\label{thm:univariate_c3_universality}
+Let $[a, b] \subset \mathbb{R}$ ($a < b$) be a compact interval and let $f \in C^3([a, b])$ be any orientation-preserving target diffeomorphism satisfying $\inf_{t \in [a, b]} f'(t) \ge \eta_0 > 0$. For any spline degree $p \ge 3$ and any tolerance $\varepsilon > 0$, there exist a sufficiently fine uniform knot sequence $a = t_{p+1} < t_{p+2} < \dots < t_{M+1} = b$ with mesh width $h = (b - a)/(M - p)$, a base control point $c_1 \in \mathbb{R}$, an increment floor $\delta_{\text{mono}} \in \big(0, \frac{h}{2p}\eta_0\big)$, and unconstrained parameters $\theta \in \mathbb{R}^{M-1}$ in the cumulative softplus parameterization \eqref{eq:softplus_reparam} such that the resulting monotonic B-spline $\phi_M$ satisfies $\inf_{t \in \mathbb{R}} \phi'_M(t) \ge \eta_0 / 2 > 0$ and:
+\begin{enumerate}
+    \item \textbf{Classical $C^3([a, b])$ Convergence ($p \ge 4$):} When $p \ge 4$, $\phi_M \in C^3([a, b])$ and
+    \begin{equation}
+        \| \phi_M - f \|_{C^3([a, b])} \coloneqq \max_{0 \le r \le 3} \sup_{t \in [a, b]} \big| \phi_M^{(r)}(t) - f^{(r)}(t) \big| < \varepsilon.
+        \label{eq:c3_norm_bound}
+    \end{equation}
+    \item \textbf{Sobolev $C^2([a, b]) \cap W^{3,\infty}([a, b])$ Convergence ($p = 3$):} When $p = 3$, $\phi_M \in C^2([a, b])$ with piecewise-constant third derivative on $[a, b] \setminus \mathcal{T}_M$ (where $\mathcal{T}_M = \{t_{p+1}, \dots, t_{M+1}\}$ is the finite knot set), and
+    \begin{equation}
+        \max_{0 \le r \le 2} \sup_{t \in [a, b]} \big| \phi_M^{(r)}(t) - f^{(r)}(t) \big| + \sup_{t \in [a, b] \setminus \mathcal{T}_M} \big| \phi'''_M(t) - f'''(t) \big| < \varepsilon.
+        \label{eq:w3_norm_bound}
+    \end{equation}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+By Lemma~\ref{lem:bspline_concrete}, the derivative of a degree-$p$ B-spline $\phi_M(t) = \sum_{m=1}^M c_m B_{m, p}(t)$ on $[a, b] = [t_{p+1}, t_{M+1}]$ is a degree-$(p-1)$ B-spline,
+\begin{equation}
+    \phi'_M(t) = \sum_{m=2}^M d_m B_{m, p-1}(t), \qquad d_m \coloneqq p\,\frac{c_m - c_{m-1}}{t_{m+p} - t_m}.
+    \label{eq:deriv_spline_coeff_map}
+\end{equation}
+Because $f \in C^3([a, b])$, its derivative $g \coloneqq f'$ belongs to $C^2([a, b])$ and satisfies $\inf_{t \in [a, b]} g(t) \ge \eta_0 > 0$. By classical de Boor--Fix quasi-interpolation for B-splines of degree $p - 1 \ge 2$ on a clamped uniform knot grid of mesh size $h = (b - a)/(M - p) \to 0$ \cite{deboor1978practical}, there exist spline coefficients $\{d_m\}_{m=2}^M$ assigned as bounded local linear functionals of $g$ on each knot support $[t_m, t_{m+p}]$ such that the degree-$(p-1)$ spline $s_M(t) = \sum_{m=2}^M d_m B_{m, p-1}(t)$ satisfies $\max_{0 \le r \le 2} \sup_{t \in [a, b] \setminus \mathcal{T}_M} |s_M^{(r)}(t) - g^{(r)}(t)| = \mathcal{O}\big(h + \omega(g'', h)\big) \to 0$ as $h \to 0$, where $\omega(g'', \cdot)$ is the modulus of continuity of $g''$ on $[a, b]$. When $p \ge 4$, the degree-$(p-1) \ge 3$ spline $s_M$ belongs to $C^2([a, b])$, so this convergence holds uniformly across all $t \in [a, b]$; when $p = 3$, $s_M$ is a quadratic spline in $C^1([a, b])$ whose second derivative $s''_M$ is piecewise constant and converges uniformly on $[a, b] \setminus \mathcal{T}_M$.
+
+Moreover, because $d_m \to g(\tau_m) \ge \eta_0$ uniformly across the Greville abscissae $\tau_m = \frac{1}{p-1}\sum_{r=1}^{p-1} t_{m+r}$ as $h \to 0$, choosing $M$ sufficiently large ensures that every derivative coefficient satisfies $d_m \ge \frac{3}{4}\eta_0 > \frac{1}{2}\eta_0 > 0$ simultaneously with $\sup_{t \in [a, b] \setminus \mathcal{T}_M} |s_M^{(r)}(t) - g^{(r)}(t)| < \min\big\{\frac{\varepsilon}{2\max(1, b-a)}, \frac{\eta_0}{4}\big\}$ for $r \in \{0, 1, 2\}$. Setting $c_1 \coloneqq f(a)$ and reconstructing the control points recursively via,
+\begin{equation}
+    c_m - c_{m-1} = \frac{t_{m+p} - t_m}{p}\,d_m > \frac{h}{2p}\eta_0 > \delta_{\text{mono}} > 0, \qquad m = 2, \dots, M,
+\end{equation}
+the bijectivity of $\operatorname{softplus}: \mathbb{R} \to (0, \infty)$ yields unique unconstrained parameters $\theta_{m-1} = \operatorname{softplus}^{-1}(c_m - c_{m-1} - \delta_{\text{mono}}) \in \mathbb{R}$ realizing $\phi'_M(t) = s_M(t)$ with $\phi_M(a) = c_1 = f(a)$. Integrating $\phi'_M(s) - f'(s)$ from $a$ to $t \in [a, b]$ gives $|\phi_M(t) - f(t)| \le (b - a)\sup_{s \in [a, b]} |\phi'_M(s) - f'(s)| < \varepsilon / 2$, establishing \eqref{eq:c3_norm_bound} for $p \ge 4$ and \eqref{eq:w3_norm_bound} for $p = 3$.
+\end{proof}
+
+Combining Theorem~\ref{thm:univariate_c3_universality} with the Scale-Modulated Monotonic KAN architecture (Definition~\ref{def:sm_kan}) extends this univariate approximation guarantee to heteroscedastic location--scale conditional transport maps and shows that convergence in $C^3$ (or $C^2 \cap W^{3,\infty}$ for cubic B-splines) guarantees consistent recovery of the generalized precision matrix $\Omega_{jk}$.
+
+\begin{corollary}[Consistency of Generalized Precision Matrix Recovery]
+\label{cor:precision_c3_consistency}
+Let $K \subset \mathbb{R}^d$ be a compact set on which the true conditional transport map $S^{k,*} \in C^3(K)$ satisfies $\inf_{x \in K} \partial_k S^{k,*}(x) \ge \eta_0 > 0$, and let $\{S^k_M\}_{M \ge 1}$ be a sequence of monotonic B-spline KAN or SM-KAN transport maps of spline degree $p \ge 3$.
+\begin{enumerate}
+    \item If $p \ge 4$ and $\|S^k_M - S^{k,*}\|_{C^3(K)} \to 0$ as $M \to \infty$, then the analytic precision integrand $T_{jk}(x; S^k_M)$ in \eqref{eq:precision_analytic_formula} converges uniformly on $K$ to the true conditional log-density mixed derivative,
+    \begin{equation}
+        \lim_{M \to \infty} \sup_{x \in K} \big| T_{jk}(x; S^k_M) - \partial_j \partial_k \log \pi(x_k \mid x_{-k}) \big| = 0 \qquad \forall j \neq k.
+        \label{eq:precision_integrand_uniform_conv}
+    \end{equation}
+    \item If $p = 3$ (cubic B-splines) and $S^k_M \to S^{k,*}$ uniformly in $C^2(K)$ with $\sup_{x \in K \setminus \mathcal{N}_M} |\partial_j \partial_k^2 S^k_M(x) - \partial_j \partial_k^2 S^{k,*}(x)| \to 0$ outside the union $\mathcal{N}_M$ of interior knot hyperplanes, then \eqref{eq:precision_integrand_uniform_conv} holds over $K \setminus \mathcal{N}_M$. Since $\mathcal{N}_M$ is a finite union of $(d-1)$-dimensional submanifolds of Lebesgue measure zero, for any probability distribution $\pi$ supported on $K$ with a continuous Lebesgue density, the generalized precision entries converge for all $p \ge 3$,
+    \begin{equation}
+        \lim_{M \to \infty} \Omega_{jk}(S^k_M) = \lim_{M \to \infty} \mathbb{E}_\pi\big|T_{jk}(X; S^k_M)\big| = \Omega_{jk}(S^{k,*}).
+        \label{eq:omega_consistency_limit}
+    \end{equation}
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+For all sufficiently large $M$, uniform convergence of $\partial_k S^k_M \to \partial_k S^{k,*}$ on $K$ implies $\inf_{x \in K} \partial_k S^k_M(x) \ge \eta_0 / 2 > 0$. In the decomposition \eqref{eq:precision_analytic_formula},
+\begin{equation}
+    T_{jk}(x; S^k_M) = -S_{j, M} S_{k, M} - S_M S_{jk, M} + \frac{S_{jkk, M} S_{k, M} - S_{kk, M} S_{jk, M}}{S_{k, M}^2},
+\end{equation}
+the denominator satisfies $S_{k, M}(x)^2 \ge \eta_0^2 / 4 > 0$ uniformly on $K$. Because the map $(S, S_k, S_j, S_{kk}, S_{jk}, S_{jkk}) \mapsto -S_j S_k - S S_{jk} + (S_{jkk} S_k - S_{kk} S_{jk})/S_k^2$ is locally Lipschitz on any bounded subset of $\mathbb{R} \times [\eta_0/2, \infty) \times \mathbb{R}^4$, uniform convergence of the derivatives up to third order on $K$ (for $p \ge 4$) or on $K \setminus \mathcal{N}_M$ (for $p = 3$) immediately yields \eqref{eq:precision_integrand_uniform_conv}. Finally, because $\partial_k S^k_M(x) \ge \eta_0 / 2 > 0$ is bounded away from zero on the active knot hyperplanes $\mathcal{N}_M$, the active-path derivatives never vanish, so $\mathcal{N}_M$ has Lebesgue (and hence $\pi$-) measure zero by the implicit function theorem, and bounded convergence on $K \setminus \mathcal{N}_M$ implies \eqref{eq:omega_consistency_limit}.
+\end{proof}

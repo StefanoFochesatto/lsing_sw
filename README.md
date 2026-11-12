@@ -99,10 +99,45 @@ The UMNN model implementation in this repository is adapted from the official so
 
 For further inquiries or clarifications, please refer to our **technical appendix** or contact the authors.
 
+## Monotonic KAN & Scale-Modulated KAN Transport Maps
+
+This repository also contains the implementation and research manuscript for **Monotonic Kolmogorov--Arnold Network (KAN) Transport Maps** and **Scale-Modulated KANs (SM-KANs)** for L-SING:
+
++- **Theoretical Foundations & Manuscript:** `theory/kan_transport.pdf` (LaTeX source: `theory/kan_transport.tex`).
++- **Core Package:** `models/monotonic_kan/` (`kan_map.py`, `layer.py`, `basis.py`).
++- **Empirical Report:** `benchmarks/kan_benchmark_results.md`.
+
+### Key Advantages:
+1. **Elimination of Numerical Quadrature:** Replaces 50-node Clenshaw--Curtis numerical integration in UMNNs with closed-form B-spline primitives, delivering $84\times$ to $299\times$ faster generalized precision extraction ($\widehat{\Omega}_{jk}$).
+2. **Certified Monotonicity:** Global target monotonicity $\partial_k S^k(x) \ge \epsilon > 0$ across all $\mathbb{R}^d$ certified by construction via cumulative softplus reparameterization of discrete control points and $C^1$ linear tail extrapolation.
+3. **Scale Modulation & Hessian Cancellation:** Multiplicative scale modulation $E(x_{-k}) \cdot S^k_{\text{core}}(x) + \alpha(x_{-k})$ resolves the algebraic polarization obstruction on heteroscedastic couplings while proving that scale and offset modulation introduce zero third-order curvature into the precision log-Jacobian.
+
+### Running Unit Tests & Verification:
+```bash
+# Run all 39 unit tests
+PYTHONPATH=.:src pytest tests/
+
+# Run the analytical theory verification suite
+python verify_kan_theory.py
+```
+
+### Running KAN Benchmarks:
+```bash
+# Run comprehensive benchmark suite (Gaussian, Butterfly, high-dimensional scaling)
+python run_kan_experiments.py
+
+# Benchmark scripts are located in benchmarks/
+python benchmarks/run_scale_modulated_butterfly.py
+python benchmarks/run_mixed_coupling_benchmark.py
+python benchmarks/run_ovarian_analysis.py
+```
+
+---
 
 ## Citations
-If you using L-SING in an academic paper, please cite:
+If you use L-SING or the Monotonic KAN transport map extensions in an academic paper, please cite:
 
+```bibtex
 @misc{liaw2025learninglocalneighborhoodsnongaussian,
       title={Learning local neighborhoods of non-Gaussian graphical models: A measure transport approach}, 
       author={Sarah Liaw and Rebecca Morrison and Youssef Marzouk and Ricardo Baptista},
@@ -112,4 +147,4 @@ If you using L-SING in an academic paper, please cite:
       primaryClass={cs.LG},
       url={https://arxiv.org/abs/2503.13899}, 
 }
-
+```
